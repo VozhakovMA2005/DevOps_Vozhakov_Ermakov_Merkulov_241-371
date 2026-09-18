@@ -7,11 +7,15 @@ from app.schemas.auth import (
     UserOut,
     UserUpdate,
 )
+from app.schemas.building import BuildingCreate, BuildingOut, BuildingUpdate
 from app.schemas.common import READ_ONLY_FIELDS, OrmSchema, Schema, page_envelope
 from app.schemas.department import DepartmentCreate, DepartmentOut, DepartmentUpdate
 
 __all__ = [
     "READ_ONLY_FIELDS",
+    "BuildingCreate",
+    "BuildingOut",
+    "BuildingUpdate",
     "DepartmentCreate",
     "DepartmentOut",
     "DepartmentUpdate",
