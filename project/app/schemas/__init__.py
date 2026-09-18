@@ -10,6 +10,7 @@ from app.schemas.auth import (
 from app.schemas.building import BuildingCreate, BuildingOut, BuildingUpdate
 from app.schemas.common import READ_ONLY_FIELDS, OrmSchema, Schema, page_envelope
 from app.schemas.department import DepartmentCreate, DepartmentOut, DepartmentUpdate
+from app.schemas.room_type import RoomTypeCreate, RoomTypeOut, RoomTypeUpdate
 
 __all__ = [
     "READ_ONLY_FIELDS",
@@ -21,6 +22,9 @@ __all__ = [
     "DepartmentUpdate",
     "LoginRequest",
     "OrmSchema",
+    "RoomTypeCreate",
+    "RoomTypeOut",
+    "RoomTypeUpdate",
     "Schema",
     "TokenResponse",
     "UserCreate",
