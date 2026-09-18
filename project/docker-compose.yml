@@ -1,0 +1,94 @@
+# Развёртывание веб-сервиса и СУБД. Запуск: docker compose up --build
+#
+# Порт базы наружу не публикуется (ТЗ 4.5, 7.2): приложение ходит к ней по
+# внутренней сети compose. Для отладки можно открыть порт переменной
+# POSTGRES_PORT_EXPOSED — см. закомментированный блок ports у службы db.
+
+name: audfond
+
+services:
+  db:
+    image: postgres:17.2-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-audfond}
+      POSTGRES_USER: ${POSTGRES_USER:-audfond}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
+      # Русские сообщения об ошибках сортировки не нужны, а вот UTF-8 — обязателен
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-audfond} -d ${POSTGRES_DB:-audfond}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    networks: [internal]
+    # ports:
+    #   - "127.0.0.1:${POSTGRES_PORT_EXPOSED:-5433}:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    image: audfond:0.1.0
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
+      JWT_SECRET: ${JWT_SECRET:?Задайте JWT_SECRET в .env}
+      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      SEED_DEMO: ${SEED_DEMO:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Администратор системы}
+      GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    ports:
+      - "${APP_PORT_EXPOSED:-8000}:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    networks: [internal]
+
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: test
+    image: audfond-tests:0.1.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
+      TEST_ADMIN_DSN: postgresql://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
+      JWT_SECRET: тестовый-ключ-подписи-достаточной-длины-1234567890
+      LOG_LEVEL: WARNING
+    networks: [internal]
+
+volumes:
+  db-data:
+
+networks:
+  internal:
+    driver: bridge

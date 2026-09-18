@@ -1,0 +1,55 @@
+# Развёртывание без контейнеров — systemd-служба (ТЗ 4.5, этап 2).
+#
+# Установка:
+#   sudo useradd --system --home /opt/audfond --shell /usr/sbin/nologin audfond
+#   sudo cp -r . /opt/audfond && sudo chown -R audfond:audfond /opt/audfond
+#   sudo -u audfond python3 -m venv /opt/audfond/.venv
+#   sudo -u audfond /opt/audfond/.venv/bin/pip install -r /opt/audfond/requirements.txt
+#   sudo install -m 0640 -o root -g audfond .env /etc/audfond/audfond.env
+#   sudo cp deploy/audfond.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now audfond
+
+[Unit]
+Description=AudFond — аудиторный фонд университета
+Documentation=https://example.edu/audfond
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=audfond
+Group=audfond
+WorkingDirectory=/opt/audfond
+
+# Секреты лежат вне репозитория, файл читает только служба (ТЗ 4.6)
+EnvironmentFile=/etc/audfond/audfond.env
+
+ExecStartPre=/opt/audfond/.venv/bin/python -m alembic upgrade head
+ExecStart=/opt/audfond/.venv/bin/uvicorn wsgi:app \
+    --host ${APP_HOST} --port ${APP_PORT} \
+    --no-access-log --timeout-graceful-shutdown 10
+
+# Перезапуск при аварийном завершении (ТЗ 4.2)
+Restart=on-failure
+RestartSec=5s
+
+# Корректное завершение по SIGTERM
+KillSignal=SIGTERM
+TimeoutStopSec=20s
+
+# Ограничение прав процесса
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/audfond/backups
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=audfond
+
+[Install]
+WantedBy=multi-user.target
