@@ -1,0 +1,40 @@
+[project]
+name = "audfond"
+version = "0.1.0"
+description = "Приложение для автоматизации контроля аудиторного фонда университета"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 95
+target-version = "py312"
+exclude = ["git-history", "migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # кириллица в строках, комментариях и docstring
+    "B008",                        # Depends() в значении по умолчанию — идиома FastAPI
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+exclude = ["migrations/", "git-history/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+markers = []
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/web/static/*"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if __name__", "raise NotImplementedError"]
