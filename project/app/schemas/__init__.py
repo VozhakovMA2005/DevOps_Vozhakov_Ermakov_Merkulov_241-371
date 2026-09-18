@@ -10,6 +10,7 @@ from app.schemas.auth import (
 from app.schemas.building import BuildingCreate, BuildingOut, BuildingUpdate
 from app.schemas.common import READ_ONLY_FIELDS, OrmSchema, Schema, page_envelope
 from app.schemas.department import DepartmentCreate, DepartmentOut, DepartmentUpdate
+from app.schemas.discipline import DisciplineCreate, DisciplineOut, DisciplineUpdate
 from app.schemas.measurement import MeasurementCreate, MeasurementOut
 from app.schemas.room import RoomCreate, RoomOut, RoomUpdate
 from app.schemas.room_type import RoomTypeCreate, RoomTypeOut, RoomTypeUpdate
@@ -22,6 +23,9 @@ __all__ = [
     "DepartmentCreate",
     "DepartmentOut",
     "DepartmentUpdate",
+    "DisciplineCreate",
+    "DisciplineOut",
+    "DisciplineUpdate",
     "LoginRequest",
     "MeasurementCreate",
     "MeasurementOut",
