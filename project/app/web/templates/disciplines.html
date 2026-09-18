@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Матрица допустимости{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h4 mb-0">Дисциплины и матрица допустимости</h1>
+  {% if can_write %}
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#add">
+    Добавить дисциплину
+  </button>
+  {% endif %}
+</div>
+
+<p class="text-secondary">
+  Правило D1: занятие по дисциплине можно назначить только в помещение,
+  тип которого отмечен в её строке.
+</p>
+
+{% if not disciplines %}
+  <div class="alert alert-info">Дисциплин пока нет.</div>
+{% else %}
+<div class="table-responsive shadow-sm rounded">
+  <table class="table table-bordered align-middle bg-body mb-0">
+    <thead class="table-light">
+      <tr>
+        <th scope="col" style="min-width: 220px;">Дисциплина</th>
+        {% for room_type in room_types %}
+          <th scope="col" class="text-center small">{{ room_type.code }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for discipline in disciplines %}
+      {% set allowed = discipline.allowed_room_types | map(attribute='id') | list %}
+      <tr>
+        <th scope="row" class="fw-normal">
+          <span class="fw-semibold">{{ discipline.code }}</span><br>
+          <span class="small text-secondary">{{ discipline.name }}</span>
+        </th>
+        {% for room_type in room_types %}
+          <td class="text-center {{ 'table-success' if room_type.id in allowed else '' }}">
+            {{ '✓' if room_type.id in allowed else '' }}
+          </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if can_write %}
+<div class="modal fade" id="add" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" id="discipline-form">
+      <div class="modal-header">
+        <h2 class="modal-title h5">Новая дисциплина</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-4"><label class="form-label" for="d-code">Код</label>
+            <input class="form-control" id="d-code" required maxlength="30"></div>
+          <div class="col-8"><label class="form-label" for="d-name">Название</label>
+            <input class="form-control" id="d-name" required maxlength="200"></div>
+          <div class="col-12">
+            <span class="form-label d-block">Разрешённые типы помещений (D1)</span>
+            {% for room_type in room_types %}
+            <div class="form-check">
+              <input class="form-check-input matrix" type="checkbox" value="{{ room_type.id }}"
+                     id="t-{{ room_type.id }}">
+              <label class="form-check-label" for="t-{{ room_type.id }}">{{ room_type.name }}</label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if can_write %}
+<script>
+  onSubmit('discipline-form', () => api('POST', '/api/v1/disciplines', {
+    code: value('d-code'),
+    name: value('d-name'),
+    allowed_room_type_ids: [...document.querySelectorAll('.matrix:checked')].map(n => Number(n.value)),
+  }));
+</script>
+{% endif %}
+{% endblock %}

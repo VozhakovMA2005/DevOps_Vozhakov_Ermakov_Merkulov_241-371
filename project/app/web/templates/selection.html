@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Подбор аудитории{% endblock %}
+{% block content %}
+<h1 class="h4">Подбор аудитории под занятие</h1>
+<p class="text-secondary">
+  Отбор идёт по правилам ТЗ: D6 — непригодные помещения не рассматриваются,
+  D1 — тип должен быть разрешён дисциплине, D2 — мест должно хватить группе.
+</p>
+
+<form class="row g-3 align-items-end mb-4" id="find-form">
+  <div class="col-12 col-md-4">
+    <label class="form-label" for="s-discipline">Дисциплина</label>
+    <select class="form-select" id="s-discipline" required>
+      {% for discipline in disciplines %}
+        <option value="{{ discipline.id }}">{{ discipline.code }} — {{ discipline.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-6 col-md-2">
+    <label class="form-label" for="s-size">Численность группы</label>
+    <input class="form-control" id="s-size" type="number" min="1" value="25" required>
+  </div>
+  <div class="col-6 col-md-3">
+    <label class="form-label" for="s-building">Корпус</label>
+    <select class="form-select" id="s-building">
+      <option value="">— любой —</option>
+      {% for building in buildings %}
+        <option value="{{ building.id }}">{{ building.code }} — {{ building.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="s-overload">
+      <label class="form-check-label" for="s-overload">Разрешить перегруз</label>
+    </div>
+  </div>
+  <div class="col-6 col-md-1">
+    <button class="btn btn-primary w-100" type="submit">Подобрать</button>
+  </div>
+</form>
+
+<div id="result"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('find-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const params = new URLSearchParams({
+      discipline_id: value('s-discipline'),
+      group_size: value('s-size'),
+      allow_overload: checked('s-overload'),
+    });
+    if (value('s-building')) params.set('building_id', value('s-building'));
+
+    try {
+      const data = await api('GET', '/api/v1/rooms/suitable?' + params.toString());
+      renderSelection(data);
+    } catch (error) {
+      showError(error.message);
+    }
+  });
+
+  function renderSelection(data) {
+    const target = document.getElementById('result');
+    const rejected = data.rejected;
+    const summary = `Отклонено: по D1 — ${rejected.D1_not_allowed}, `
+      + `по D2 — ${rejected.D2_too_small}, по D6 — ${rejected.D6_not_usable}.`;
+
+    if (!data.items.length) {
+      target.innerHTML = `<div class="alert alert-warning">`
+        + `<p class="mb-1">Подходящих помещений не нашлось.</p>`
+        + `<p class="mb-0 small">${data.reason || summary}</p></div>`;
+      return;
+    }
+
+    const rows = data.items.map(room => `
+      <tr class="${room.overloaded ? 'table-warning' : ''}">
+        <td><a href="/rooms/${room.id}">${room.number}</a></td>
+        <td>${room.room_type.name}</td>
+        <td class="text-end font-monospace">${room.area}</td>
+        <td class="text-end">${room.seats}</td>
+        <td class="text-end">${room.seats_margin >= 0 ? '+' + room.seats_margin : room.seats_margin}</td>
+      </tr>`).join('');
+
+    target.innerHTML = `
+      <p class="text-secondary small">${summary}</p>
+      <div class="table-responsive shadow-sm rounded">
+        <table class="table table-hover align-middle bg-body mb-0">
+          <thead class="table-light"><tr>
+            <th scope="col">Номер</th><th scope="col">Тип</th>
+            <th scope="col" class="text-end">Площадь, м²</th>
+            <th scope="col" class="text-end">Мест</th>
+            <th scope="col" class="text-end">Запас мест</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+</script>
+{% endblock %}
