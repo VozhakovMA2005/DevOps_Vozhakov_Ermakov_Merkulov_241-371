@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Помещение {{ room.number }}{% endblock %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12 col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <h1 class="h4 mb-1">Помещение {{ room.number }}</h1>
+          {% if room.is_usable %}
+            <span class="badge text-bg-success">Пригодно</span>
+          {% else %}
+            <span class="badge text-bg-warning">Непригодно</span>
+          {% endif %}
+        </div>
+        <p class="text-secondary small">{{ room.room_type.name }}</p>
+
+        <dl class="row mb-0">
+          <dt class="col-7 fw-normal text-secondary">Рабочая площадь</dt>
+          <dd class="col-5 text-end font-monospace">{{ '%.2f'|format(room.area) }} м²</dd>
+
+          <dt class="col-7 fw-normal text-secondary">Мест обучающимся</dt>
+          <dd class="col-5 text-end">{{ room.seats }}</dd>
+
+          <dt class="col-7 fw-normal text-secondary">Мест сотрудникам</dt>
+          <dd class="col-5 text-end">{{ room.staff_seats }}</dd>
+
+          <dt class="col-7 fw-semibold">Объём (вместимость)</dt>
+          <dd class="col-5 text-end fw-semibold">{{ room.volume }} чел.</dd>
+
+          <dt class="col-7 fw-normal text-secondary">Норматив D5</dt>
+          <dd class="col-5 text-end">
+            {% if capacity is none %}
+              <span class="text-secondary">норма не задана</span>
+            {% else %}
+              {{ capacity }} чел.
+            {% endif %}
+          </dd>
+
+          <dt class="col-7 fw-normal text-secondary">Закреплено за</dt>
+          <dd class="col-5 text-end">{{ department.code if department else '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    {% if capacity is not none and room.volume > capacity %}
+    <div class="alert alert-danger mt-3">
+      Нарушение правила D5: мест {{ room.volume }} при нормативной вместимости {{ capacity }}.
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-12 col-lg-7">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h2 class="h5 mb-0">История обмеров</h2>
+      {% if can_write %}
+      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#add">
+        Внести обмер
+      </button>
+      {% endif %}
+    </div>
+
+    <div class="table-responsive shadow-sm rounded">
+      <table class="table table-sm align-middle bg-body mb-0">
+        <thead class="table-light">
+          <tr>
+            <th scope="col">Дата</th>
+            <th scope="col" class="text-end">Площадь</th>
+            <th scope="col" class="text-end">Мест</th>
+            <th scope="col">Источник</th>
+            <th scope="col">Внёс</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in history %}
+          <tr>
+            <td>{{ row.measured_on.strftime('%d.%m.%Y') }}</td>
+            <td class="text-end font-monospace">{{ '%.2f'|format(row.area) }}</td>
+            <td class="text-end">{{ row.seats }} + {{ row.staff_seats }}</td>
+            <td><span class="badge text-bg-light text-body-secondary">{{ row.source.value }}</span></td>
+            <td class="small">{{ row.measured_by.full_name if row.measured_by else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="form-text mt-2">
+      История не переписывается: ошибочный обмер исправляется новым обмером.
+      Карточка помещения всегда показывает последний.
+    </p>
+  </div>
+</div>
+
+{% if can_write %}
+<div class="modal fade" id="add" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" id="measure-form">
+      <div class="modal-header">
+        <h2 class="modal-title h5">Новый обмер</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-6"><label class="form-label" for="m-area">Площадь, м²</label>
+            <input class="form-control" id="m-area" type="number" step="0.01" min="0.01"
+                   value="{{ '%.2f'|format(room.area) }}" required></div>
+          <div class="col-6"><label class="form-label" for="m-date">Дата обмера</label>
+            <input class="form-control" id="m-date" type="date" required></div>
+          <div class="col-6"><label class="form-label" for="m-seats">Мест обучающимся</label>
+            <input class="form-control" id="m-seats" type="number" min="0" value="{{ room.seats }}" required></div>
+          <div class="col-6"><label class="form-label" for="m-staff">Мест сотрудникам</label>
+            <input class="form-control" id="m-staff" type="number" min="0" value="{{ room.staff_seats }}" required></div>
+          <div class="col-12"><label class="form-label" for="m-note">Примечание</label>
+            <input class="form-control" id="m-note" maxlength="300"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if can_write %}
+<script>
+  document.getElementById('m-date').valueAsDate = new Date();
+  onSubmit('measure-form', () => api('POST', '/api/v1/rooms/{{ room.id }}/measurements', {
+    area: value('m-area'),
+    seats: Number(value('m-seats')),
+    staff_seats: Number(value('m-staff')),
+    measured_on: value('m-date'),
+    note: value('m-note') || null,
+  }));
+</script>
+{% endif %}
+{% endblock %}

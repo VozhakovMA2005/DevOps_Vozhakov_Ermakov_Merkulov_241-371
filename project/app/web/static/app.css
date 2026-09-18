@@ -1,0 +1,37 @@
+/* Небольшие дополнения к Bootstrap. Сам Bootstrap лежит рядом, в vendor/ —
+   ТЗ 4.5 запрещает тянуть оформление с внешних CDN. */
+
+:root {
+  --audfond-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.font-monospace {
+  font-family: var(--audfond-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Таблицы каталога бывают широкими: на телефоне прокручиваем их,
+   а не всю страницу */
+.table-responsive {
+  -webkit-overflow-scrolling: touch;
+}
+
+.breadcrumb {
+  --bs-breadcrumb-divider: "›";
+  margin-bottom: 1rem;
+}
+
+.card a.stretched-link {
+  color: inherit;
+}
+
+#alert {
+  white-space: pre-line;
+}
+
+@media (max-width: 575.98px) {
+  .navbar-text {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход — AudFond</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="bg-body-tertiary">
+<main class="container" style="max-width: 420px;">
+  <div class="card shadow-sm mt-5">
+    <div class="card-body p-4">
+      <h1 class="h4 mb-1">AudFond</h1>
+      <p class="text-secondary small mb-4">Аудиторный фонд университета</p>
+
+      <div id="alert" class="alert alert-danger d-none" role="alert"></div>
+
+      <form id="login-form" autocomplete="on">
+        <div class="mb-3">
+          <label class="form-label" for="username">Логин</label>
+          <input class="form-control" id="username" name="username" required
+                 autocomplete="username" autofocus>
+        </div>
+        <div class="mb-4">
+          <label class="form-label" for="password">Пароль</label>
+          <input class="form-control" id="password" name="password" type="password"
+                 required autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary w-100" type="submit" id="submit">Войти</button>
+      </form>
+    </div>
+  </div>
+</main>
+<script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/static/app.js"></script>
+<script>
+  document.getElementById('login-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = document.getElementById('submit');
+    button.disabled = true;
+    button.textContent = 'Проверяем…';
+    try {
+      await api('POST', '/api/v1/auth/login', {
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      });
+      window.location.href = {{ next|tojson }};
+    } catch (error) {
+      showError(error.message);
+      button.disabled = false;
+      button.textContent = 'Войти';
+    }
+  });
+</script>
+</body>
+</html>

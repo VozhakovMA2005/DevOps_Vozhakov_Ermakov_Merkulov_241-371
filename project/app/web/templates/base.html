@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AudFond{% endblock %} — аудиторный фонд</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="bg-body-tertiary">
+<nav class="navbar navbar-expand-lg bg-primary" data-bs-theme="dark">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-semibold" href="/">AudFond</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+            data-bs-target="#nav" aria-controls="nav" aria-expanded="false"
+            aria-label="Меню">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/">Каталог</a></li>
+        <li class="nav-item"><a class="nav-link" href="/disciplines">Дисциплины</a></li>
+        <li class="nav-item"><a class="nav-link" href="/selection">Подбор аудитории</a></li>
+      </ul>
+      {% if user %}
+      <span class="navbar-text me-3 small">{{ user.full_name }} · {{ role_title }}</span>
+      <button class="btn btn-outline-light btn-sm" onclick="logout()">Выйти</button>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<main class="container-fluid py-4" style="max-width: 1400px;">
+  {% if crumbs %}
+  <nav aria-label="Навигационная цепочка">
+    <ol class="breadcrumb">
+      {% for label, href in crumbs %}
+        {% if href %}
+          <li class="breadcrumb-item"><a href="{{ href }}">{{ label }}</a></li>
+        {% else %}
+          <li class="breadcrumb-item active" aria-current="page">{{ label }}</li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+  </nav>
+  {% endif %}
+
+  <div id="alert" class="alert alert-danger d-none" role="alert"></div>
+  {% block content %}{% endblock %}
+</main>
+
+<script src="/static/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

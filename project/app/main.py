@@ -164,6 +164,7 @@ def _register_routers(app: FastAPI) -> None:
     from app.api.rooms import router as rooms_router
     from app.api.selection import router as selection_router
     from app.api.users import router as users_router
+    from app.web.pages import router as web_router
 
     app.include_router(health_router)
     app.include_router(auth_router)
@@ -178,6 +179,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(building_floors_router)
     app.include_router(measurements_router)
     app.include_router(disciplines_router)
+    app.include_router(web_router)
 
 
 app = None  # приложение создаётся фабрикой; см. wsgi.py и uvicorn app.main:build

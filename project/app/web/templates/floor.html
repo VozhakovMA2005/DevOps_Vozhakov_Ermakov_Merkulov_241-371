@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ building.code }}, этаж {{ floor }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h4 mb-0">
+    Корпус {{ building.code }},
+    {% if floor == -1 %}подвал{% else %}этаж {{ floor }}{% endif %}
+  </h1>
+  {% if can_write %}
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#add">
+    Добавить помещение
+  </button>
+  {% endif %}
+</div>
+
+{% if not rooms %}
+  <div class="alert alert-info">На этом этаже помещений пока нет.</div>
+{% else %}
+<div class="table-responsive shadow-sm rounded">
+  <table class="table table-hover align-middle bg-body mb-0">
+    <thead class="table-light">
+      <tr>
+        <th scope="col">Номер</th>
+        <th scope="col">Тип</th>
+        <th scope="col" class="text-end">Площадь, м²</th>
+        <th scope="col" class="text-end">Мест</th>
+        <th scope="col" class="text-end">Объём</th>
+        <th scope="col" class="text-end">Норматив</th>
+        <th scope="col">Состояние</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for room in rooms %}
+      {% set capacity = room.normative_capacity() %}
+      <tr class="{{ '' if room.is_usable else 'table-warning' }}">
+        <td><a href="/rooms/{{ room.id }}" class="fw-semibold text-decoration-none">{{ room.number }}</a></td>
+        <td>{{ room.room_type.name }}</td>
+        <td class="text-end font-monospace">{{ '%.2f'|format(room.area) }}</td>
+        <td class="text-end">{{ room.seats }} + {{ room.staff_seats }}</td>
+        <td class="text-end fw-semibold">{{ room.volume }}</td>
+        <td class="text-end text-secondary">{{ capacity if capacity is not none else '—' }}</td>
+        <td>
+          {% if room.is_usable %}
+            <span class="badge text-bg-success">Пригодно</span>
+          {% else %}
+            <span class="badge text-bg-warning">Непригодно</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="form-text mt-2">
+  «Объём» — вместимость помещения в людях: мест для обучающихся плюс мест для
+  сотрудников; считает база. «Норматив» — правило D5: площадь, делённая на норму
+  площади на человека для этого типа, с округлением вниз.
+</p>
+{% endif %}
+
+{% if can_write %}
+<div class="modal fade" id="add" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <form class="modal-content" id="room-form">
+      <div class="modal-header">
+        <h2 class="modal-title h5">Новое помещение</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-6 col-md-3"><label class="form-label" for="r-number">Номер</label>
+            <input class="form-control" id="r-number" required maxlength="30"></div>
+          <div class="col-6 col-md-3"><label class="form-label" for="r-area">Площадь, м²</label>
+            <input class="form-control" id="r-area" type="number" step="0.01" min="0.01" required></div>
+          <div class="col-6 col-md-3"><label class="form-label" for="r-seats">Мест обучающимся</label>
+            <input class="form-control" id="r-seats" type="number" min="0" value="0" required></div>
+          <div class="col-6 col-md-3"><label class="form-label" for="r-staff">Мест сотрудникам</label>
+            <input class="form-control" id="r-staff" type="number" min="0" value="1" required></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="r-type">Тип помещения</label>
+            <select class="form-select" id="r-type" required>
+              {% for room_type in room_types %}
+                <option value="{{ room_type.id }}">{{ room_type.name }}{% if room_type.area_norm %} ({{ '%.2f'|format(room_type.area_norm) }} м²/чел){% endif %}</option>
+              {% endfor %}
+            </select></div>
+          <div class="col-12 col-md-6"><label class="form-label" for="r-department">Подразделение</label>
+            <select class="form-select" id="r-department">
+              <option value="">— не закреплено —</option>
+              {% for department in departments %}
+                <option value="{{ department.id }}">{{ department.code }} — {{ department.name }}</option>
+              {% endfor %}
+            </select></div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="r-usable" checked>
+              <label class="form-check-label" for="r-usable">Пригодно к эксплуатации</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if can_write %}
+<script>
+  onSubmit('room-form', () => api('POST', '/api/v1/rooms', {
+    building_id: {{ building.id }},
+    floor: {{ floor }},
+    number: value('r-number'),
+    area: value('r-area'),
+    seats: Number(value('r-seats')),
+    staff_seats: Number(value('r-staff')),
+    room_type_id: Number(value('r-type')),
+    department_id: value('r-department') ? Number(value('r-department')) : null,
+    is_usable: checked('r-usable'),
+  }));
+</script>
+{% endif %}
+{% endblock %}
