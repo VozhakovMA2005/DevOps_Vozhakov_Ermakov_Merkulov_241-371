@@ -29,13 +29,3 @@
 - Описание программы — [`program description/`](./program%20description)
 
 ---
-
-## Быстрый старт
-
-```bash
-git clone git@github.com:<логин>/audfond.git
-cd audfond
-docker compose up -d --build
-```
-
-Подробности запуска и настройки — в документации в папке [`document/`](./document).
