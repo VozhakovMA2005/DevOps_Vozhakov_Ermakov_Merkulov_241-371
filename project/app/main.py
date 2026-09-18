@@ -162,6 +162,7 @@ def _register_routers(app: FastAPI) -> None:
     from app.api.room_types import router as room_types_router
     from app.api.rooms import buildings_router as building_floors_router
     from app.api.rooms import router as rooms_router
+    from app.api.selection import router as selection_router
     from app.api.users import router as users_router
 
     app.include_router(health_router)
@@ -170,6 +171,9 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(departments_router)
     app.include_router(buildings_router)
     app.include_router(room_types_router)
+    # Подбор объявляется раньше помещений: иначе /rooms/suitable будет разобран
+    # как /rooms/{room_id} с нечисловым идентификатором
+    app.include_router(selection_router)
     app.include_router(rooms_router)
     app.include_router(building_floors_router)
     app.include_router(measurements_router)
