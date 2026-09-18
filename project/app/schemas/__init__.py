@@ -14,6 +14,7 @@ from app.schemas.discipline import DisciplineCreate, DisciplineOut, DisciplineUp
 from app.schemas.measurement import MeasurementCreate, MeasurementOut
 from app.schemas.room import RoomCreate, RoomOut, RoomUpdate
 from app.schemas.room_type import RoomTypeCreate, RoomTypeOut, RoomTypeUpdate
+from app.schemas.selection import SuitableRoomOut
 
 __all__ = [
     "READ_ONLY_FIELDS",
@@ -37,6 +38,7 @@ __all__ = [
     "RoomTypeUpdate",
     "RoomUpdate",
     "Schema",
+    "SuitableRoomOut",
     "TokenResponse",
     "UserCreate",
     "UserOut",
