@@ -8,9 +8,13 @@ from app.schemas.auth import (
     UserUpdate,
 )
 from app.schemas.common import READ_ONLY_FIELDS, OrmSchema, Schema, page_envelope
+from app.schemas.department import DepartmentCreate, DepartmentOut, DepartmentUpdate
 
 __all__ = [
     "READ_ONLY_FIELDS",
+    "DepartmentCreate",
+    "DepartmentOut",
+    "DepartmentUpdate",
     "LoginRequest",
     "OrmSchema",
     "Schema",
