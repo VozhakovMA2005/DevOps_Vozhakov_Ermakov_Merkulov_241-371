@@ -19,7 +19,7 @@ def suitable(
     group_size: int = Query(ge=1, le=10000),
     building_id: int | None = None,
     allow_overload: bool = False,
-    limit: int = Query(default=1, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=200),
 ):
     result = selection_service.suitable_rooms(
         session,
