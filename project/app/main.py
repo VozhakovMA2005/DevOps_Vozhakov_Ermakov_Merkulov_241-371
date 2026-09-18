@@ -154,12 +154,14 @@ def create_app(config: Config | None = None) -> FastAPI:
 
 def _register_routers(app: FastAPI) -> None:
     from app.api.auth import router as auth_router
+    from app.api.departments import router as departments_router
     from app.api.health import router as health_router
     from app.api.users import router as users_router
 
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(users_router)
+    app.include_router(departments_router)
 
 
 app = None  # приложение создаётся фабрикой; см. wsgi.py и uvicorn app.main:build
