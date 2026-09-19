@@ -45,7 +45,7 @@ CMD ["serve"]
 # Стадия проверок: тот же образ плюс инструменты разработчика
 FROM runtime AS test
 USER root
-COPY requirements-dev.txt ./
+COPY requirements.txt requirements-dev.txt ./
 RUN pip install -r requirements-dev.txt
 COPY --chown=audfond:audfond tests ./tests
 COPY --chown=audfond:audfond pyproject.toml Makefile ./
