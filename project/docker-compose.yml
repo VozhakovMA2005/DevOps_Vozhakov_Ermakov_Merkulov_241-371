@@ -84,6 +84,8 @@ services:
       TEST_ADMIN_DSN: postgresql://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
       JWT_SECRET: тестовый-ключ-подписи-достаточной-длины-1234567890
       LOG_LEVEL: WARNING
+      RUFF_CACHE_DIR: /tmp/.ruff_cache
+      MYPY_CACHE_DIR: /tmp/.mypy_cache
     networks: [internal]
 
 volumes:
