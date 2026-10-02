@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 [tool.ruff]
 line-length = 95
 target-version = "py312"
-exclude = ["git-history", "migrations/versions"]
+exclude = ["git-history", "git-history-lr2", "migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -24,7 +24,7 @@ python_version = "3.12"
 warn_unused_configs = true
 ignore_missing_imports = true
 disallow_untyped_defs = false
-exclude = ["migrations/", "git-history/"]
+exclude = ["migrations/", "git-history/", "git-history-lr2/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
