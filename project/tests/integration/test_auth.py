@@ -146,3 +146,19 @@ def test_admin_cannot_disable_self(client, admin):
     me = client.get("/api/v1/auth/me").json()
     response = client.patch(f"/api/v1/users/{me['id']}", json={"is_active": False})
     assert response.status_code == 403
+
+
+def test_login_cookie_has_no_secure_flag_without_tls(client, session):
+    """Secure не ставится там, где TLS нет.
+
+    Браузер молча не сохраняет cookie с флагом Secure, пришедшую по http.
+    Если бы флаг стоял всегда, вход на стенде внешне не работал бы: пароль
+    принимается, а страница возвращает на форму входа.
+    """
+    make_user(session, "engineer2", Role.FUND_ADMIN)
+    response = client.post(
+        "/api/v1/auth/login", json={"username": "engineer2", "password": "пароль-12345"}
+    )
+    assert response.status_code == 200
+    cookie = response.headers["set-cookie"].lower()
+    assert "secure" not in cookie

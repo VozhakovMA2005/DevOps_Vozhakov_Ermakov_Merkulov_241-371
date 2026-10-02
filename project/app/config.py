@@ -44,11 +44,28 @@ class Config:
     page_size_default: int
     page_size_max: int
     max_upload_bytes: int
+    cookie_secure: bool
     git_commit: str
 
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+
+TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+FALSE_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def _bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    value = raw.strip().lower()
+    if value in TRUE_VALUES:
+        return True
+    if value in FALSE_VALUES:
+        return False
+    raise ConfigError(f"{name} должно быть true или false, получено: {raw!r}")
 
 
 def _int(name: str, default: str, *, minimum: int = 1, maximum: int | None = None) -> int:
@@ -122,5 +139,11 @@ def load_config() -> Config:
         page_size_default=page_size_default,
         page_size_max=page_size_max,
         max_upload_bytes=_int("MAX_UPLOAD_BYTES", "20971520"),
+        # Флаг Secure у cookie с токеном. По умолчанию включён в продуктивной
+        # среде, но вынесен в отдельную настройку: браузер НЕ сохраняет
+        # Secure-cookie, полученную по http. Пока перед приложением нет TLS,
+        # на стенде ставится COOKIE_SECURE=false, иначе вход молча не
+        # срабатывает — страница возвращает на форму.
+        cookie_secure=_bool("COOKIE_SECURE", app_env == "production"),
         git_commit=os.getenv("GIT_COMMIT", "unknown").strip() or "unknown",
     )

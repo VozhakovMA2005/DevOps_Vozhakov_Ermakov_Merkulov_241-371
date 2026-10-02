@@ -16,14 +16,19 @@ router = APIRouter(prefix="/api/v1/auth", tags=["аутентификация"])
 def set_auth_cookie(
     response: Response, token: str, config: AppConfig, ttl_seconds: int
 ) -> None:
-    """Токен в cookie: HttpOnly и SameSite всегда, Secure — в продуктивной среде."""
+    """Токен в cookie: HttpOnly и SameSite всегда, Secure — по настройке.
+
+    Secure вынесен в COOKIE_SECURE, а не привязан к APP_ENV: браузер не
+    сохраняет Secure-cookie, пришедшую по http, и вход тогда молча не
+    срабатывает. На стенде без TLS ставится false, за прокси с TLS — true.
+    """
     response.set_cookie(
         COOKIE_NAME,
         token,
         max_age=ttl_seconds,
         httponly=True,
         samesite="lax",
-        secure=config.is_production,
+        secure=config.cookie_secure,
         path="/",
     )
 
