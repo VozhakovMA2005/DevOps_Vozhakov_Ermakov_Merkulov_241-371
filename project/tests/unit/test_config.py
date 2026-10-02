@@ -85,3 +85,33 @@ def test_non_numeric_port(monkeypatch):
     _env(monkeypatch, APP_PORT="восемь")
     with pytest.raises(ConfigError, match="APP_PORT"):
         load_config()
+
+
+def test_cookie_secure_follows_app_env_by_default(monkeypatch):
+    """Без явной настройки Secure включается только в продуктивной среде."""
+    _env(monkeypatch, APP_ENV="production", JWT_SECRET=GOOD_SECRET)
+    assert load_config().cookie_secure is True
+
+    _env(monkeypatch, APP_ENV="development")
+    assert load_config().cookie_secure is False
+
+
+def test_cookie_secure_can_be_switched_off_in_production(monkeypatch):
+    """Стенд без TLS: браузер не сохранит Secure-cookie, пришедшую по http."""
+    _env(monkeypatch, APP_ENV="production", JWT_SECRET=GOOD_SECRET, COOKIE_SECURE="false")
+    assert load_config().cookie_secure is False
+
+
+def test_cookie_secure_accepts_usual_spellings(monkeypatch):
+    for value in ("1", "true", "TRUE", "yes", "on"):
+        _env(monkeypatch, COOKIE_SECURE=value)
+        assert load_config().cookie_secure is True, value
+    for value in ("0", "false", "FALSE", "no", "off"):
+        _env(monkeypatch, COOKIE_SECURE=value)
+        assert load_config().cookie_secure is False, value
+
+
+def test_cookie_secure_rejects_nonsense(monkeypatch):
+    _env(monkeypatch, COOKIE_SECURE="может-быть")
+    with pytest.raises(ConfigError, match="COOKIE_SECURE"):
+        load_config()
