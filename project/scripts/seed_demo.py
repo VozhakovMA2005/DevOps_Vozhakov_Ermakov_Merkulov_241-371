@@ -112,9 +112,9 @@ def main() -> int:
 
         buildings: dict[str, Building] = {}
         for code, name, address, floors, basement, area in BUILDINGS:
-            row = session.scalar(select(Building).where(Building.code == code))
-            if row is None:
-                row = Building(
+            building_row = session.scalar(select(Building).where(Building.code == code))
+            if building_row is None:
+                building_row = Building(
                     code=code,
                     name=name,
                     address=address,
@@ -122,8 +122,8 @@ def main() -> int:
                     has_basement=basement,
                     passport_area=Decimal(area),
                 )
-                session.add(row)
-            buildings[code] = row
+                session.add(building_row)
+            buildings[code] = building_row
         session.flush()
 
         created = 0
@@ -161,11 +161,11 @@ def main() -> int:
             created += 1
 
         for code, name, allowed in DISCIPLINES:
-            row = session.scalar(select(Discipline).where(Discipline.code == code))
-            if row is None:
-                row = Discipline(code=code, name=name)
-                session.add(row)
-            row.allowed_room_types = [types[t] for t in allowed]
+            discipline_row = session.scalar(select(Discipline).where(Discipline.code == code))
+            if discipline_row is None:
+                discipline_row = Discipline(code=code, name=name)
+                session.add(discipline_row)
+            discipline_row.allowed_room_types = [types[t] for t in allowed]
 
         session.commit()
 
