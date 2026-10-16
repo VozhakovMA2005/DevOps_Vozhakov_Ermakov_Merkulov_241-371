@@ -57,3 +57,35 @@ def test_staff_seats_count_towards_the_limit():
     check_rule_d5(room_type("2.50"), Decimal("25.00"), 10, 0)
     with pytest.raises(RuleD5):
         check_rule_d5(room_type("2.50"), Decimal("25.00"), 10, 1)
+
+
+# --------------------------------------------------------------------------- #
+# Округление. Эти проверки добавлены после мутационного прогона: подмена
+# округления вниз на округление вверх проходила незамеченной, потому что все
+# прежние площади делились на норму без остатка (пункт 5 задания)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("area", "norm", "expected"),
+    [
+        ("63.00", "2.50", 25),  # 25.2 — вниз 25, вверх было бы 26
+        ("62.50", "2.50", 25),  # делится ровно: вниз и вверх совпадают
+        ("64.90", "2.50", 25),  # 25.96 — почти 26, но всё ещё 25
+        ("65.00", "2.50", 26),  # ровно 26
+        ("2.49", "2.50", 0),  # меньше нормы на одного человека — ни одного места
+        ("7.50", "2.00", 3),  # 3.75 — вниз 3
+    ],
+)
+def test_normative_capacity_rounds_down(area, norm, expected):
+    """D5 округляет вниз: человека нельзя посадить на дробную часть площади."""
+    room_type = RoomType(code="X", name="Тип", area_norm=Decimal(norm))
+    assert room_type.normative_capacity(Decimal(area)) == expected
+
+
+def test_remainder_does_not_add_a_seat():
+    """Прямая формулировка правила: остаток площади места не добавляет."""
+    room_type = RoomType(code="X", name="Тип", area_norm=Decimal("2.50"))
+    exact = room_type.normative_capacity(Decimal("62.50"))
+    with_remainder = room_type.normative_capacity(Decimal("64.99"))
+    assert exact == with_remainder == 25

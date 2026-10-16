@@ -97,3 +97,45 @@ def test_filter_by_building(client, fund, discipline, building):
 def test_unknown_discipline(client, fund, admin):
     response = client.get("/api/v1/rooms/suitable?discipline_id=99999&group_size=10")
     assert response.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Границы D2. Добавлено после мутационного прогона: сдвиг условия на единицу
+# (margin < -1 вместо margin < 0) проходил незамеченным, потому что прежние
+# проверки брали группу намного больше числа мест (пункт 5 задания)
+# --------------------------------------------------------------------------- #
+
+
+def test_d2_group_exactly_fills_the_room(client, fund, discipline):
+    """Группа ровно по числу мест проходит: 24 места — группа 24."""
+    result = client.get(
+        f"/api/v1/rooms/suitable?discipline_id={discipline['id']}&group_size=24"
+    ).json()
+    numbers = {item["number"] for item in result["items"]}
+    assert "201" in numbers
+    assert next(i for i in result["items"] if i["number"] == "201")["seats_margin"] == 0
+
+
+def test_d2_one_person_over_capacity_is_rejected(client, fund, discipline):
+    """Граница с другой стороны: группа на одного человека больше — отказ.
+
+    Именно этот случай ловит сдвиг условия на единицу: без него правило
+    пропускало бы перегруз на одного человека без явного разрешения.
+    """
+    result = client.get(
+        f"/api/v1/rooms/suitable?discipline_id={discipline['id']}&group_size=25"
+    ).json()
+    numbers = {item["number"] for item in result["items"]}
+    assert "201" not in numbers
+    assert result["rejected"]["D2_too_small"] == 2  # и 201 на 24 места, и 202 на 11
+
+
+def test_d2_one_person_over_capacity_passes_with_overload(client, fund, discipline):
+    """Тот же перегруз на одного человека допускается явным разрешением."""
+    result = client.get(
+        f"/api/v1/rooms/suitable?discipline_id={discipline['id']}"
+        "&group_size=25&allow_overload=true"
+    ).json()
+    room = next(item for item in result["items"] if item["number"] == "201")
+    assert room["overloaded"] is True
+    assert room["seats_margin"] == -1
