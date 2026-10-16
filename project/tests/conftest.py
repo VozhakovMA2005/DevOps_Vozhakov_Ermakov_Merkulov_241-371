@@ -27,7 +27,9 @@ def database_url() -> Iterator[str]:
     name = f"audfond_test_{uuid.uuid4().hex[:10]}"
     try:
         admin = psycopg.connect(ADMIN_DSN, autocommit=True, connect_timeout=3)
-    except Exception as exc:  # pragma: no cover - окружение без базы
+    except (
+        Exception
+    ) as exc:  # pragma: no cover — ветка для окружения без базы - окружение без базы
         pytest.skip(f"PostgreSQL недоступен ({exc})")
 
     with admin:
@@ -45,7 +47,7 @@ def database_url() -> Iterator[str]:
         text=True,
         check=False,
     )
-    if result.returncode != 0:  # pragma: no cover
+    if result.returncode != 0:  # pragma: no cover — ветка для окружения без базы
         pytest.fail(f"Миграции не применились:\n{result.stderr}")
 
     try:
@@ -60,6 +62,10 @@ def database_url() -> Iterator[str]:
 
 @pytest.fixture
 def app(database_url: str, monkeypatch: pytest.MonkeyPatch):
+    # Настройки разработчика из .env не должны влиять на тесты: окружение
+    # задаётся здесь целиком (пункт 6 задания — изоляция конфигурации)
+    for name in ("COOKIE_SECURE", "LOG_FORMAT", "PAGE_SIZE_DEFAULT", "PAGE_SIZE_MAX"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("JWT_SECRET", TEST_SECRET)
     monkeypatch.setenv("APP_ENV", "test")
