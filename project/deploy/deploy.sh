@@ -85,6 +85,11 @@ if [ -z "${OWNER_PASSWORD:-}" ] && [ -f "$CONF_DIR/db-passwords" ]; then
     . "$CONF_DIR/db-passwords"
 fi
 [ -n "${OWNER_PASSWORD:-}" ] || die "Нет пароля роли af_owner: задайте OWNER_PASSWORD"
+case "$OWNER_PASSWORD" in
+    *ваш-*|*ваш_*|*CHANGE_ME*|*ПАРОЛЬ*|*пароль-миграций*)
+        die "OWNER_PASSWORD — заглушка из инструкции, а не пароль. Настоящий:
+    на сервере базы  sudo grep OWNER_PASSWORD /etc/audfond/db-passwords" ;;
+esac
 
 DB_URL_APP="$(grep -E '^DATABASE_URL=' "$CONF_DIR/audfond.env" | cut -d= -f2-)"
 DB_HOSTPORT="$(printf '%s' "$DB_URL_APP" | sed -E 's|.*@([^/]+)/.*|\1|')"
@@ -139,4 +144,15 @@ for _ in $(seq 1 15); do
     sleep 1
 done
 journalctl -u audfond -n 30 --no-pager
+REASON="$(curl -sS http://127.0.0.1:8000/readyz 2>&1 || true)"
+info "ответ /readyz: $REASON"
+case "$REASON" in
+    *DB_UNAVAILABLE*)
+        warn "приложение не может войти в базу ролью af_app"
+        info "пароль af_app в $CONF_DIR/audfond.env (строка DATABASE_URL) не совпадает"
+        info "с паролем роли в базе. Проверить на сервере базы:"
+        info "  sudo grep APP_PASSWORD /etc/audfond/db-passwords" ;;
+    *MIGRATIONS_NOT_APPLIED*)
+        warn "в базе нет таблицы alembic_version — миграции не накатаны" ;;
+esac
 die "Приложение не ответило на /readyz за 15 секунд"
