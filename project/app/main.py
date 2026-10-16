@@ -158,7 +158,6 @@ def _register_routers(app: FastAPI) -> None:
     from app.api.departments import router as departments_router
     from app.api.disciplines import router as disciplines_router
     from app.api.health import router as health_router
-    from app.api.imports import router as imports_router
     from app.api.measurements import router as measurements_router
     from app.api.room_types import router as room_types_router
     from app.api.rooms import buildings_router as building_floors_router
@@ -173,8 +172,6 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(departments_router)
     app.include_router(buildings_router)
     app.include_router(room_types_router)
-    # Импорт регистрируется до помещений: он создаёт помещения, а не наоборот
-    app.include_router(imports_router)
     # Подбор объявляется раньше помещений: иначе /rooms/suitable будет разобран
     # как /rooms/{room_id} с нечисловым идентификатором
     app.include_router(selection_router)

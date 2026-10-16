@@ -18,16 +18,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
 from app.deps import DbSession, MaybeUser
-from app.models import (
-    ROLE_TITLES,
-    Building,
-    Department,
-    Discipline,
-    ImportJob,
-    Room,
-    RoomType,
-)
-from app.schemas.imports import STATUS_TITLES
+from app.models import ROLE_TITLES, Building, Department, Discipline, Room, RoomType
 from app.services import measurements as measurement_service
 from app.services import rooms as rooms_service
 from app.services.common import get_or_404
@@ -176,37 +167,4 @@ def selection_page(request: Request, user: MaybeUser, session: DbSession):
         disciplines=list(session.scalars(select(Discipline).order_by(Discipline.code))),
         buildings=list(session.scalars(select(Building).order_by(Building.code))),
         crumbs=[("Подбор аудитории", None)],
-    )
-
-
-#: Статус загрузки -> цвет метки Bootstrap. В шаблон уходит функцией, чтобы
-#: не плодить вторую таблицу соответствий в разметке
-_STATUS_CLASSES = {
-    "DRY_RUN": "secondary",
-    "APPLIED": "success",
-    "PARTIAL": "warning",
-    "FAILED": "danger",
-    "PENDING": "light",
-}
-
-
-@router.get("/imports", response_class=HTMLResponse, summary="Импорт реестра помещений")
-def imports_page(request: Request, user: MaybeUser, session: DbSession):
-    if user is None:
-        return _login_redirect(request)
-    jobs = list(
-        session.scalars(
-            select(ImportJob)
-            .order_by(ImportJob.created_at.desc(), ImportJob.id.desc())
-            .limit(25)
-        )
-    )
-    return _page(
-        request,
-        user,
-        "imports.html",
-        jobs=jobs,
-        status_title=lambda status: STATUS_TITLES[status],
-        status_class=lambda value: _STATUS_CLASSES.get(value, "secondary"),
-        crumbs=[("Импорт реестра помещений", None)],
     )
