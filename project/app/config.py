@@ -127,7 +127,11 @@ def load_config() -> Config:
 
     return Config(
         app_env=app_env,
-        app_host=os.getenv("APP_HOST", "0.0.0.0"),
+        # По умолчанию слушаем только локальный адрес. Открывать все
+        # интерфейсы — осознанное решение среды развёртывания, а не значение
+        # по умолчанию: в docker-compose и в audfond.env APP_HOST задан явно.
+        # Так же уходит замечание bandit B104, и подавлять его не нужно
+        app_host=os.getenv("APP_HOST", "127.0.0.1"),
         app_port=_int("APP_PORT", "8000", minimum=1, maximum=65535),
         database_url=database_url,
         jwt_secret=jwt_secret,

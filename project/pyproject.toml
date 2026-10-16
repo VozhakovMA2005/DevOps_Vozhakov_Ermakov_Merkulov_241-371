@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 [tool.ruff]
 line-length = 95
 target-version = "py312"
-exclude = ["git-history", "git-history-lr2", "migrations/versions"]
+extend-exclude = [".venv", "venv", "reports", "backups", "git-history", "git-history-lr2", "git-history-lr3", "migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -24,7 +24,7 @@ python_version = "3.12"
 warn_unused_configs = true
 ignore_missing_imports = true
 disallow_untyped_defs = false
-exclude = ["migrations/", "git-history/", "git-history-lr2/"]
+exclude = ["migrations/", "git-history/", "git-history-lr2/", "git-history-lr3/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -32,9 +32,26 @@ pythonpath = ["."]
 addopts = "-q"
 markers = []
 
+[tool.bandit]
+# Анализируется боевой код. Тесты и служебные генераторы истории задач
+# исключены осознанно: они не попадают в поставку
+exclude_dirs = [
+    "tests",
+    ".venv",
+    "migrations",
+    "git-history",
+    "git-history-lr2",
+    "git-history-lr3",
+]
+
 [tool.coverage.run]
 source = ["app"]
 omit = ["app/web/static/*"]
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if __name__", "raise NotImplementedError"]
+# Порог из ТЗ 7.1. Снижать нельзя: это и есть «запрет на снижение порогов»
+# из пункта 14 задания. Для сервисного слоя отдельный порог 80% проверяется
+# целью make coverage-services
+fail_under = 70
+show_missing = true

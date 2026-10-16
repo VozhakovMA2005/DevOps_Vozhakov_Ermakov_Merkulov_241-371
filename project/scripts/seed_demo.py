@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import date
 from decimal import Decimal
@@ -31,6 +32,8 @@ from app.models import (
     RoomType,
 )
 from app.security import hash_password
+
+MIN_PASSWORD_LENGTH = 8
 
 USERS = [
     ("fund", "Инженер аудиторного фонда", Role.FUND_ADMIN),
@@ -82,21 +85,39 @@ def main() -> int:
     init_engine(config.database_url)
 
     with session_factory()() as session:
+        # Пароль демонстрационных учётных записей задаётся переменной окружения:
+        # в репозитории паролей нет даже для демо-данных (ТЗ 7.2).
+        password = os.getenv("SEED_PASSWORD", "").strip()
+        if len(password) < MIN_PASSWORD_LENGTH:
+            print(
+                f"Задайте SEED_PASSWORD не короче {MIN_PASSWORD_LENGTH} символов "
+                "(см. .env.example)",
+                file=sys.stderr,
+            )
+            return 2
+
         types = {row.code: row for row in session.scalars(select(RoomType))}
         if not types:
             print("Справочник типов помещений пуст: сначала накатите миграции")
             return 1
 
+        users_created = 0
+        users_existing = 0
         for username, full_name, role in USERS:
             if session.scalar(select(AppUser).where(AppUser.username == username)) is None:
                 session.add(
                     AppUser(
                         username=username,
                         full_name=full_name,
-                        password_hash=hash_password("demo-пароль-2026"),
+                        password_hash=hash_password(password),
                         role=role,
                     )
                 )
+                users_created += 1
+            else:
+                # Пароль существующей учётной записи не переписываем: сменить
+                # его должен администратор, а не сценарий демонстрационных данных
+                users_existing += 1
 
         departments: dict[str, Department] = {}
         for code, name, _parent in DEPARTMENTS:
@@ -173,8 +194,60 @@ def main() -> int:
         f"Демонстрационные данные готовы: корпусов {len(BUILDINGS)}, "
         f"помещений добавлено {created}, дисциплин {len(DISCIPLINES)}"
     )
-    print("Учётные записи показа: fund / dispatcher / observer, пароль demo-пароль-2026")
+    names = ", ".join(username for username, _, _ in USERS)
+    if users_created:
+        print(f"Учётные записи показа созданы ({names}), пароль — из SEED_PASSWORD")
+    if users_existing:
+        print(
+            f"Учётных записей уже было: {users_existing} — их пароль НЕ изменён. "
+            "Сменить его можно только администратором системы"
+        )
+
+    sample = write_sample_file()
+    if sample is not None:
+        print(f"Образец файла для показа импорта: {sample}")
     return 0
+
+
+def write_sample_file() -> Path | None:
+    """Образец реестра для показа импорта: часть строк заведомо с ошибками.
+
+    Файл кладётся в reports/ — он не попадает в репозиторий (см. .gitignore) и
+    нужен только для демонстрации. Колонки берутся из самого сервиса импорта,
+    поэтому образец не может разойтись с разбором.
+    """
+    try:
+        from openpyxl import Workbook
+
+        from app.services.imports import COLUMNS
+    except ImportError:  # pragma: no cover — openpyxl не установлен
+        return None
+
+    rows = [
+        # корректные строки: норма площади соблюдена
+        ["A", "401", 4, "SEMINAR", "KAF-VT", 62.50, 24, 1, "да", "образец, хорошая строка"],
+        ["A", "402", 4, "SEMINAR", None, 45.00, 17, 1, "да", None],
+        # заведомо ошибочные: по одной причине на строку
+        ["A", "403", 4, "НЕТТАКОГО", None, 60.00, 20, 0, "да", "неизвестный тип помещения"],
+        ["A", "404", 4, "SEMINAR", None, "примерно 60", 20, 0, "да", "площадь не число"],
+        ["A", "405", 4, "SEMINAR", None, 20.00, 50, 0, "да", "нарушение нормы площади, D5"],
+        ["A", "401", 5, "SEMINAR", None, 62.50, 24, 0, "да", "дубль номера в этом же файле"],
+        ["A", "406", 0, "SEMINAR", None, 50.00, 15, 0, "да", "нулевого этажа не бывает"],
+    ]
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Помещения"
+    sheet.append(list(COLUMNS))
+    for row in rows:
+        sheet.append(row)
+
+    target = Path(__file__).resolve().parents[1] / "reports"
+    target.mkdir(exist_ok=True)
+    path = target / "демо-реестр-помещений.xlsx"
+    workbook.save(path)
+    workbook.close()
+    return path
 
 
 if __name__ == "__main__":
