@@ -10,17 +10,31 @@ GOOD_DB = "postgresql+psycopg://audfond:pass@localhost:5432/audfond"
 GOOD_SECRET = "ключ-подписи-достаточной-длины-1234567890"
 
 
+#: Все переменные, которые читает load_config. Перед каждой проверкой окружение
+#: вычищается полностью: иначе значение из .env разработчика попадало бы в тест,
+#: и проверка значения по умолчанию ловила бы чужую настройку (пункт 6 задания —
+#: изоляция тестовой конфигурации)
+CONFIG_VARS = (
+    "APP_ENV",
+    "APP_HOST",
+    "APP_PORT",
+    "DATABASE_URL",
+    "JWT_SECRET",
+    "JWT_TTL_MINUTES",
+    "COOKIE_SECURE",
+    "LOGIN_MAX_ATTEMPTS",
+    "LOGIN_LOCK_MINUTES",
+    "LOG_LEVEL",
+    "LOG_FORMAT",
+    "PAGE_SIZE_DEFAULT",
+    "PAGE_SIZE_MAX",
+    "MAX_UPLOAD_BYTES",
+    "GIT_COMMIT",
+)
+
+
 def _env(monkeypatch, **overrides) -> None:
-    for name in [
-        *overrides,
-        "APP_ENV",
-        "DATABASE_URL",
-        "JWT_SECRET",
-        "LOG_FORMAT",
-        "PAGE_SIZE_DEFAULT",
-        "PAGE_SIZE_MAX",
-        "APP_PORT",
-    ]:
+    for name in (*CONFIG_VARS, *overrides):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("DATABASE_URL", GOOD_DB)
     monkeypatch.setenv("JWT_SECRET", GOOD_SECRET)

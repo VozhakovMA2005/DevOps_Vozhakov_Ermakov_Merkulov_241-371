@@ -77,3 +77,35 @@ def test_observer_sees_no_edit_buttons(client, session, building):
 
 def test_writer_sees_edit_buttons(client, building):
     assert "Добавить корпус" in client.get("/").text
+
+
+def test_imports_page_requires_login(client):
+    response = client.get("/imports", follow_redirects=False)
+    assert response.status_code == 303
+    assert "/login" in response.headers["location"]
+
+
+def test_imports_page_shows_the_log(client, admin, building, room_types):
+    """Страница импорта отдаётся и показывает журнал загрузок."""
+    import io
+
+    from openpyxl import Workbook
+
+    from app.services.imports import COLUMNS
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(list(COLUMNS))
+    sheet.append(["A", "W01", 1, "LECTURE", None, 300.0, 50, 0, "да", None])
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    client.post(
+        "/api/v1/imports/rooms?dry_run=true",
+        files={"file": ("страница.xlsx", buffer.getvalue(), "application/octet-stream")},
+    )
+
+    response = client.get("/imports")
+    assert response.status_code == 200
+    assert "Импорт реестра помещений" in response.text
+    assert "страница.xlsx" in response.text
+    assert "Скачать шаблон-образец" in response.text
