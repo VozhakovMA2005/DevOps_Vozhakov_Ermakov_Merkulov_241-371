@@ -10,7 +10,7 @@
 |---|---|
 | Версия | v0.1.0 — этап 1 (ЛР №1) |
 | Стек | Python 3.12, FastAPI, SQLAlchemy 2 + Alembic, PostgreSQL 17 |
-| Интерфейс | серверные страницы на Jinja2 + Bootstrap 5.3 |
+| Интерфейс | серверные страницы на Jinja2 + Bootstrap 5.3 (локально, без CDN) |
 | Развёртывание | Docker Compose или systemd-служба |
 
 ---
@@ -43,12 +43,12 @@
 
 ```bash
 cp .env.example .env
-
+# Подставьте свои значения. Ключ подписи токенов:
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 make up            # собрать и поднять приложение и базу
 make create-admin  # первый администратор: логин и пароль из .env
-make seed          # демонстрационные данные
+make seed          # демонстрационные данные (необязательно)
 ```
 
 Веб-интерфейс: http://localhost:8000/
@@ -56,45 +56,64 @@ make seed          # демонстрационные данные
 
 ```bash
 make logs   # журнал приложения
-make down   # остановить работу приложения
+make down   # остановить
 ```
 
 ## Запуск без контейнеров
 
-Python 3.12 и доступная база PostgreSQL 17.
+Для разработки понадобится Python 3.12 и доступная база PostgreSQL 17.
 
 ```bash
 make setup   # виртуальное окружение и зависимости
 make run     # миграции и запуск с автоперезагрузкой
 ```
 
-Развёртывание службой systemd описано в `deploy/audfond.service` и
-`docs/deploy.md`.
+**Развёртывание на сервере** (этап 2, без контейнеров) — каталог `deploy/`:
+
+```bash
+ROLE=db  PUBKEY="$(cat ключ.pub)" bash deploy/01-base.sh   # обе машины
+OWNER_PASSWORD=… APP_PASSWORD=… bash deploy/02-db-server.sh # сервер базы
+bash deploy/03-app-server.sh                                # сервер приложения
+sudo OWNER_PASSWORD=… bash deploy/deploy.sh                 # выкладка
+bash deploy/check.sh                                        # проверка стенда
+```
+
+Подробно — `docs/deploy.md`.
 
 ---
 
 ## Команды
 
-| Команда | Что делает |
-|---|---|
-| `make up` / `make down` | поднять / остановить контейнеры |
-| `make setup` / `make run` | окружение и запуск без контейнеров |
-| `make migrate` | накатить миграции |
-| `make migrate-check` | проверить обратимость: upgrade → downgrade → upgrade |
-| `make create-admin` | создать первого администратора |
-| `make seed` | демонстрационные данные |
-| `make test` / `make test-cov` | тесты / тесты с покрытием |
-| `make quality` / `make types` | линтер и форматирование / проверка типов |
-| `make container-check` | проверка образа: не root, нет latest, есть healthcheck |
-| `make backup` / `make restore FILE=…` | резервная копия и восстановление |
-| `make verify` | всё вместе — перед запросом на слияние |
+Единый командный интерфейс (ТЗ 7.1). Полный список — `make help`.
 
----
+```bash
+make setup     # первоначальная настройка проекта одной командой
+make verify    # весь обязательный набор проверок перед запросом на слияние
+make mode      # каким способом пойдут проверки: в контейнерах или без них
+```
+
+Контейнеры не нужны: если докера нет или он не запущен, проверки идут в
+локальном окружении `.venv`. Принудительно — `make LOCAL=1 verify` или
+`make LOCAL=0 verify`.
+
+| Группа | Команды |
+|---|---|
+| Запуск | `make up`, `make down`, `make run`, `make logs`, `make ps` |
+| База | `make migrate`, `make migrate-check`, `make migrate-drill` |
+| Данные | `make create-admin`, `make seed` |
+| Копии | `make backup`, `make restore FILE=…`, `make backup-local`, `make restore-local FILE=…`, `make restore-drill` |
+| Тесты | `make test`, `make test-cov`, `make test-report`, `make coverage-services`, `make mutants` |
+| Анализ | `make quality`, `make types`, `make sast`, `make secrets`, `make waivers` |
+| Образ | `make container-check` |
+
+`make verify` выполняет по порядку: `quality` → `types` → `sast` → `secrets` →
+`waivers` → `migrate-check` → `test`. Если хоть один шаг красный, запрос на
+слияние не открывается.
 
 ## Конфигурация
 
-Вся настройка — через переменные окружения. Список в `.env.example`.
-Две переменные обязательны, без них приложение не
+Вся настройка — через переменные окружения (ТЗ 4.6). Список в `.env.example`,
+секретов в репозитории нет. Две переменные обязательны, без них приложение не
 стартует:
 
 - `DATABASE_URL` — адрес базы;
@@ -106,11 +125,11 @@ make run     # миграции и запуск с автоперезагруз�
 
 | Документ | О чём |
 |---|---|
-| `docs/schema.md` | схема данных: таблицы, связи, ограничения |
-| `docs/api.md` | контракты HTTP API, коды ошибок, примеры |
-| `docs/rules.md` | правила предметной области D1–D6: где и как проверяются |
+| `docs/description.md` | описание программы: назначение, пользователи, сценарии, правила D1–D6 |
+| `docs/api.md` | контракты HTTP API: адреса, роли, коды ошибок, примеры |
+| `docs/schema.md` | схема данных: таблицы, связи, ограничения, миграции |
+| `CONTRIBUTING.md` | правила внесения изменений, команды проверки, порядок приёмки |
 | `docs/deploy.md` | развёртывание, диагностика, восстановление |
 | `docs/testing.md` | что покрыто тестами и как их читать |
-| `CONTRIBUTING.md` | правила внесения и приёмки изменений |
 
 Машинное описание API в формате OpenAPI отдаётся по адресу `/api/openapi.json`.
