@@ -20,6 +20,7 @@ coverage.xml
 
 # Резервные копии базы и артефакты сборки
 backups/
+reports/
 *.dump
 *.sql.gz
 dist/

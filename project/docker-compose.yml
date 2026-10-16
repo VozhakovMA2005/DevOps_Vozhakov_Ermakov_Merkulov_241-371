@@ -55,6 +55,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       SEED_DEMO: ${SEED_DEMO:-false}
+      SEED_PASSWORD: ${SEED_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Администратор системы}
@@ -82,10 +84,16 @@ services:
       APP_ENV: test
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
       TEST_ADMIN_DSN: postgresql://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
+      # Учения поднимают одноразовые базы. В контейнерах это делает та же роль,
+      # что создаёт тестовые базы: порт СУБД наружу не публикуется (ТЗ 4.5),
+      # поэтому с хоста до базы не достать, и учения идут внутри сети compose
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/postgres
       JWT_SECRET: тестовый-ключ-подписи-достаточной-длины-1234567890
       LOG_LEVEL: WARNING
-      RUFF_CACHE_DIR: /tmp/.ruff_cache
-      MYPY_CACHE_DIR: /tmp/.mypy_cache
+    # Отчёты складываются на хост: иначе make test-report оставит их в
+    # удалённом контейнере и в CI их нечем будет забрать
+    volumes:
+      - ./reports:/app/reports
     networks: [internal]
 
 volumes:

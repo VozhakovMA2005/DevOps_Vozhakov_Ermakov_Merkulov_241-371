@@ -45,10 +45,24 @@ CMD ["serve"]
 # Стадия проверок: тот же образ плюс инструменты разработчика
 FROM runtime AS test
 USER root
-COPY requirements.txt requirements-dev.txt ./
+# Клиент PostgreSQL нужен проверкам: обратимость миграций, учения по миграциям
+# и по восстановлению работают через psql, pg_dump и pg_restore
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends postgresql-client \
+ && rm -rf /var/lib/apt/lists/*
+COPY requirements-dev.txt ./
 RUN pip install -r requirements-dev.txt
 COPY --chown=audfond:audfond tests ./tests
 COPY --chown=audfond:audfond pyproject.toml Makefile ./
+# Остальное дерево нужно проверке секретов: она смотрит весь репозиторий,
+# а не только код приложения
+COPY --chown=audfond:audfond docs ./docs
+COPY --chown=audfond:audfond deploy ./deploy
+COPY --chown=audfond:audfond .env.example .gitignore CONTRIBUTING.md README.md ./
+# Каталоги под отчёты и копии: внутри образа их создаёт root, а работает
+# непривилегированный пользователь
+RUN mkdir -p /app/reports /app/backups \
+ && chown audfond:audfond /app/reports /app/backups
 USER audfond
 ENTRYPOINT []
 CMD ["pytest", "-q"]
