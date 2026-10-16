@@ -58,6 +58,14 @@ class Room(TimestampMixin, Base):
         Integer, Computed("seats + staff_seats", persisted=True)
     )
 
+    #: Какой загрузкой заведено помещение. NULL — заведено вручную.
+    #: Нужно для разбора претензий «откуда взялась эта аудитория»: по журналу
+    #: импорта видно файл, автора и время. ondelete=SET NULL, потому что
+    #: удаление записи журнала не должно уносить за собой помещения
+    import_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_job.id", ondelete="SET NULL"), index=True
+    )
+
     #: Правило D6: непригодное помещение не участвует в подборе
     is_usable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     note: Mapped[str | None] = mapped_column(String(500))
@@ -69,5 +77,5 @@ class Room(TimestampMixin, Base):
         """Правило D5 для текущей площади и типа помещения."""
         return self.room_type.normative_capacity(self.area)
 
-    def __repr__(self) -> str:  # pragma: no cover
+    def __repr__(self) -> str:  # pragma: no cover — текст для отладки, в тестах не проверяется
         return f"<Room {self.number} {self.area} м²>"
