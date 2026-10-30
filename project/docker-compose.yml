@@ -1,104 +1,247 @@
-# Развёртывание веб-сервиса и СУБД. Запуск: docker compose up --build
+# Контейнерное окружение AudFond — ЛР4.
 #
-# Порт базы наружу не публикуется (ТЗ 4.5, 7.2): приложение ходит к ней по
-# внутренней сети compose. Для отладки можно открыть порт переменной
-# POSTGRES_PORT_EXPOSED — см. закомментированный блок ports у службы db.
+# Запуск: make up (сборка, make container-check, затем docker compose up).
+# Настройки берутся из .env.docker: make docker-env создаёт его со случайными
+# паролями. Напрямую: docker compose --env-file .env.docker up -d
+#
+# Схема:
+#
+#   клиент ──8080──► nginx ──┬──► app1 ──┐
+#                (frontend)  └──► app2 ──┴──► db      (backend, без выхода наружу)
+#                                 migrate ──► db      (одноразово, до app1 и app2)
+#
+# Наружу публикуется ОДИН порт — Nginx. У приложения и базы портов на машине
+# нет: к приложению можно попасть только через Nginx, к базе — только из
+# внутренней сети backend (ЛР4, пункт 8 и доп. пункт 2).
+#
+# Порядок запуска (пункт 7): db здорова → migrate отработала успешно →
+# app1 и app2 здоровы → nginx.
 
 name: audfond
+
+# Общее для экземпляров приложения и службы миграций
+x-app-image: &app-image
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    target: runtime
+    args:
+      GIT_COMMIT: ${GIT_COMMIT:-unknown}
+  image: audfond:0.4.0
+
+x-app-env: &app-env
+  APP_ENV: ${APP_ENV:-production}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env.docker}@db:5432/${POSTGRES_DB:-audfond}
+  JWT_SECRET: ${JWT_SECRET:?Задайте JWT_SECRET в .env.docker}
+  JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-60}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Администратор системы}
+  SEED_PASSWORD: ${SEED_PASSWORD:-}
+
+# Ужесточение для всех наших контейнеров: без повышения привилегий и без
+# возможностей ядра, которые процессу не нужны
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+
+x-app: &app
+  <<: [*app-image, *hardening]
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+  # Файловая система только для чтения: код в контейнере не меняется.
+  # Запись разрешена лишь во временный каталог в памяти (загрузка файлов)
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m
+  # Время на корректное завершение: uvicorn ждёт текущие запросы до 10 с
+  stop_grace_period: 15s
+  # Обоснование лимитов — docs/containers.md, раздел «Ресурсы»
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: 384m
+        pids: 128
+      reservations:
+        memory: 128m
+  # Healthcheck берётся из образа (docker/Dockerfile) и здесь не отключается
 
 services:
   db:
     image: postgres:17.2-alpine
+    <<: *hardening
+    # Официальному образу при первом запуске нужно сменить владельца каталога
+    # данных, затем он сам переходит на пользователя postgres. Без этих
+    # возможностей он не стартует; сам сервер работает не от root
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-audfond}
       POSTGRES_USER: ${POSTGRES_USER:-audfond}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
-      # Русские сообщения об ошибках сортировки не нужны, а вот UTF-8 — обязателен
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env.docker}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     volumes:
+      # Данные переживают пересоздание контейнера и обновление образа
+      # (пункт 9). Имя тома задаётся явно: так его можно подменить новым
+      # томом для восстановления (make restore-new-volume)
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-audfond} -d ${POSTGRES_DB:-audfond}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 10
-      start_period: 10s
+      start_period: 15s
+    # PostgreSQL завершается по SIGINT (быстрая остановка с записью на диск);
+    # время на неё — больше, чем у приложения
+    stop_grace_period: 30s
+    shm_size: 128m
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 1g
-    networks: [internal]
-    # ports:
-    #   - "127.0.0.1:${POSTGRES_PORT_EXPOSED:-5433}:5432"
+          cpus: "1.00"
+          memory: 512m
+          pids: 200
+        reservations:
+          memory: 256m
+    networks: [backend]
+    # Порт базы наружу не публикуется (пункт 8). Для разовой отладки:
+    #   docker compose --env-file .env.docker exec db psql -U audfond
 
-  app:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: runtime
-      args:
-        GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    image: audfond:0.1.0
-    restart: on-failure
+  migrate:
+    <<: [*app-image, *hardening]
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      <<: *app-env
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      APP_ENV: ${APP_ENV:-development}
-      APP_HOST: 0.0.0.0
-      APP_PORT: 8000
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
-      JWT_SECRET: ${JWT_SECRET:?Задайте JWT_SECRET в .env}
-      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-60}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      LOG_FORMAT: ${LOG_FORMAT:-json}
-      SEED_DEMO: ${SEED_DEMO:-false}
-      SEED_PASSWORD: ${SEED_PASSWORD:-}
-      COOKIE_SECURE: ${COOKIE_SECURE:-}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Администратор системы}
-      GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    ports:
-      - "${APP_PORT_EXPOSED:-8000}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 512m
-    networks: [internal]
+          cpus: "0.50"
+          memory: 256m
+          pids: 64
+    networks: [backend]
 
+  app1:
+    <<: *app
+    hostname: app1
+    environment:
+      <<: *app-env
+      INSTANCE_ID: app-1
+      MIGRATE_ON_START: "false"
+      FORWARDED_ALLOW_IPS: 172.30.40.10
+    networks:
+      backend: {}
+      frontend:
+        ipv4_address: 172.30.40.11
+
+  app2:
+    <<: *app
+    hostname: app2
+    environment:
+      <<: *app-env
+      INSTANCE_ID: app-2
+      MIGRATE_ON_START: "false"
+      FORWARDED_ALLOW_IPS: 172.30.40.10
+    networks:
+      backend: {}
+      frontend:
+        ipv4_address: 172.30.40.12
+
+  nginx:
+    # Вариант образа без root: процесс работает от пользователя 101 и слушает
+    # непривилегированный порт 8080
+    image: nginxinc/nginx-unprivileged:1.27.3-alpine
+    <<: *hardening
+    restart: unless-stopped
+    depends_on:
+      app1:
+        condition: service_healthy
+      app2:
+        condition: service_healthy
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/proxy.inc:/etc/nginx/conf.d/proxy.inc:ro
+    ports:
+      # Единственный опубликованный порт окружения. HTTP_BIND — на каком
+      # адресе машины его слушать: на стенде только сеть host-only
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/nginx-health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64m
+          pids: 64
+    networks:
+      frontend:
+        ipv4_address: 172.30.40.10
+
+  # Проверки в контейнере: make verify-docker. Запускается по требованию
   tests:
     profiles: ["test"]
     build:
       context: .
       dockerfile: docker/Dockerfile
       target: test
-    image: audfond-tests:0.1.0
+      args:
+        PG_CLIENT_FROM_PGDG: ${PG_CLIENT_FROM_PGDG:-1}
+    image: audfond-tests:0.4.0
+    <<: *hardening
     depends_on:
       db:
         condition: service_healthy
     environment:
       APP_ENV: test
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
-      TEST_ADMIN_DSN: postgresql://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-audfond}
-      # Учения поднимают одноразовые базы. В контейнерах это делает та же роль,
-      # что создаёт тестовые базы: порт СУБД наружу не публикуется (ТЗ 4.5),
-      # поэтому с хоста до базы не достать, и учения идут внутри сети compose
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env.docker}@db:5432/${POSTGRES_DB:-audfond}
+      TEST_ADMIN_DSN: postgresql://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/postgres
+      # Учения поднимают одноразовые базы внутри сети backend: порт СУБД
+      # наружу не публикуется, поэтому с машины до базы не достать
       ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-audfond}:${POSTGRES_PASSWORD}@db:5432/postgres
-      JWT_SECRET: тестовый-ключ-подписи-достаточной-длины-1234567890
       LOG_LEVEL: WARNING
-    # Отчёты складываются на хост: иначе make test-report оставит их в
-    # удалённом контейнере и в CI их нечем будет забрать
+    # Отчёты складываются на машину: иначе их нечем забрать из контейнера
     volumes:
       - ./reports:/app/reports
-    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1g
+    networks: [backend]
 
 volumes:
   db-data:
+    name: ${DB_VOLUME:-audfond_db-data}
 
 networks:
-  internal:
-    driver: bridge
+  # Внутренняя сеть базы: без выхода наружу и без доступа с машины
+  backend:
+    internal: true
+  # Сеть между Nginx и экземплярами. Адреса постоянные — см. docker/nginx/default.conf
+  frontend:
+    ipam:
+      config:
+        - subnet: 172.30.40.0/24
