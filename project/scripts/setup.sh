@@ -22,7 +22,7 @@ cd "$ROOT"
 SKIP_DB=0
 [ "${1:-}" = "--no-db" ] && SKIP_DB=1
 
-MIN_PYTHON="3.11"
+MIN_PYTHON="3.12"
 
 step "Python"
 require_command python3 "Поставьте Python $MIN_PYTHON или новее."

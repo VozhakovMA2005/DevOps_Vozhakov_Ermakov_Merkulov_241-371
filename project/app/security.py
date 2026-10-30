@@ -38,7 +38,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 def needs_rehash(password_hash: str) -> bool:
     try:
         return _hasher.check_needs_rehash(password_hash)
-    except InvalidHashError:  # pragma: no cover
+    except InvalidHashError:  # pragma: no cover — ветка достижима только на устаревшем хэше
         return True
 
 

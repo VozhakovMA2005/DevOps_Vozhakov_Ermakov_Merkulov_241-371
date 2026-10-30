@@ -60,7 +60,7 @@ class RoomOut(OrmSchema):
     def _area(self, value: Decimal) -> str:
         return f"{value:.2f}"
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # property, а mypy ждёт метод
     @property
     def normative_capacity(self) -> int | None:
         """Правило D5: площадь / норма на человека, округление вниз."""

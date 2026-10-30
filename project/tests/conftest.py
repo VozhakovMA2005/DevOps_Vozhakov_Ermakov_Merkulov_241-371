@@ -27,9 +27,7 @@ def database_url() -> Iterator[str]:
     name = f"audfond_test_{uuid.uuid4().hex[:10]}"
     try:
         admin = psycopg.connect(ADMIN_DSN, autocommit=True, connect_timeout=3)
-    except (
-        Exception
-    ) as exc:  # pragma: no cover — ветка для окружения без базы - окружение без базы
+    except Exception as exc:  # pragma: no cover — ветка для окружения без базы
         pytest.skip(f"PostgreSQL недоступен ({exc})")
 
     with admin:
