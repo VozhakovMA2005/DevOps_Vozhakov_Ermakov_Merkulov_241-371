@@ -1,25 +1,29 @@
 # Единый командный интерфейс — ТЗ 7.1.
 # В CI выполняются те же команды, что и локально.
 #
-# Контур проверок один, а запускать его можно двумя способами:
-#   без контейнеров — в локальном окружении .venv (стенд этапа 2)
-#   в контейнерах   — в образе tests (этап 4)
+# Команды работают двумя способами:
+#   без контейнеров — локальное окружение .venv и стенд ЛР2 (этапы 2–3)
+#   в контейнерах   — docker compose, ЛР4
 #
-# Способ выбирается сам: если докер не установлен или не запущен, команды идут
-# в локальном окружении. Принудительно:
+# Способ выбирается сам: контейнеры — если Docker запущен И создан файл
+# настроек контейнеров .env.docker (make docker-env). Иначе — без них.
+# Принудительно:
 #   make LOCAL=1 verify    без контейнеров
 #   make LOCAL=0 verify    в контейнерах
-#
-# Развёртывание тоже поддерживается двумя способами: в контейнерах (up/down) и
-# без них (setup/run) — см. deploy/audfond.service.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-COMPOSE := docker compose
+COMPOSE := docker compose --env-file .env.docker
 VENV := .venv
 PY := $(VENV)/bin/python
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+export GIT_COMMIT
+# Без служебных аттестаций сборки (provenance): с ними каждая сборка даёт
+# новый идентификатор образа даже без единого изменения, и make up зря
+# пересоздаёт контейнеры приложения. Без них тот же вход даёт тот же образ
+export BUILDX_NO_DEFAULT_ATTESTATIONS := 1
 
-DOCKER_READY := $(shell docker info >/dev/null 2>&1 && echo 1 || echo 0)
+DOCKER_READY := $(shell docker info >/dev/null 2>&1 && test -f .env.docker && echo 1 || echo 0)
 LOCAL ?= $(if $(filter 1,$(DOCKER_READY)),0,1)
 
 ifeq ($(LOCAL),1)
@@ -34,15 +38,12 @@ RESTORE_CMD  = bash scripts/restore.sh $(if $(YES),--yes,) FILE=$(FILE)
 DRILL_PREFIX := $(RUN)
 else
 RUN  := $(COMPOSE) --profile test run --rm tests
-MODE := в контейнерах
-MIGRATE_CMD := $(COMPOSE) run --rm app migrate
-ADMIN_CMD   := $(COMPOSE) run --rm app admin
-SEED_CMD    := $(COMPOSE) run --rm app python scripts/seed_demo.py
-BACKUP_CMD  := @mkdir -p backups && $(COMPOSE) exec -T db pg_dump \
-                 -U $${POSTGRES_USER:-audfond} -Fc $${POSTGRES_DB:-audfond} \
-                 > backups/audfond-$$(date +%Y%m%d-%H%M%S).dump
-RESTORE_CMD  = $(COMPOSE) exec -T db pg_restore -U $${POSTGRES_USER:-audfond} \
-                 -d $${POSTGRES_DB:-audfond} --clean --if-exists < $(FILE)
+MODE := в контейнерах (docker compose, .env.docker)
+MIGRATE_CMD := $(COMPOSE) run --rm migrate
+ADMIN_CMD   := $(COMPOSE) run --rm migrate admin
+SEED_CMD    := $(COMPOSE) run --rm migrate python scripts/seed_demo.py
+BACKUP_CMD  := bash scripts/container_backup.sh
+RESTORE_CMD  = bash scripts/container_restore.sh $(if $(YES),--yes,) FILE=$(FILE)
 DRILL_PREFIX := $(RUN)
 endif
 
@@ -50,7 +51,8 @@ endif
         waivers coverage-services migrate migrate-check migrate-drill restore-drill \
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
-        up down logs ps shell container-check clean
+        docker-env build preflight up down logs ps shell container-check persist-drill \
+        shutdown-drill failover-drill restore-new-volume lock clean
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -68,32 +70,72 @@ mode: ## Показать, каким способом пойдут провер
 setup: ## Первоначальная настройка проекта одной командой
 	bash scripts/setup.sh
 
-run: ## Запустить приложение локально (нужен .env и доступная база)
-	$(RUN) sh -c 'python -m alembic upgrade head && \
+run: ## Запустить приложение локально, без контейнеров (нужен .env и база)
+	bash scripts/run.sh sh -c 'python -m alembic upgrade head && \
 	  uvicorn wsgi:app --host $${APP_HOST:-127.0.0.1} --port $${APP_PORT:-8000} --reload'
 
 # --------------------------------------------------------------------------- #
-# Контейнеры (этап 4)
+# Контейнеры (ЛР4)
 # --------------------------------------------------------------------------- #
 
-up: ## Поднять приложение и базу в контейнерах
-	$(COMPOSE) up --build -d
-	@echo "Веб-интерфейс: http://localhost:$${APP_PORT_EXPOSED:-8000}/"
+docker-env: ## Создать .env.docker со случайными паролями (один раз)
+	python3 scripts/docker_env.py
 
-down: ## Остановить контейнеры
+build: ## Собрать образы приложения и проверок
+	$(COMPOSE) build migrate
+	$(COMPOSE) --profile test build tests
+
+# Изменение окружения — только после успешной проверки (пункт 14): сначала
+# сборка, затем make container-check по файлам и образу, и лишь потом запуск.
+# Если проверка упала, работающие контейнеры не трогаются
+preflight: ## Проверить машину до запуска: Docker, образы, права, порт, диск
+	@bash scripts/preflight.sh
+
+up: preflight ## Проверить машину, собрать, проверить (container-check) и запустить
+	@# Настройки Nginx подключаются в контейнер файлами, и читает их
+	@# пользователь 101. Закрытые права (600) ломают запуск Nginx
+	@chmod a+r docker/nginx/default.conf docker/nginx/proxy.inc
+	$(COMPOSE) build migrate
+	python3 scripts/container_check.py --no-runtime
+	$(COMPOSE) up -d --wait
+	@# Настройки Nginx подключены файлами: после их правки контейнер не
+	@# пересоздаётся, поэтому конфигурацию надо проверить и перечитать
+	$(COMPOSE) exec -T nginx nginx -t -q && $(COMPOSE) exec -T nginx nginx -s reload
+	@echo "Сервис: http://<адрес машины>:$${HTTP_PORT:-8080}/ — на стенде http://192.168.56.10:8080/ (только через Nginx)"
+
+down: ## Остановить и удалить контейнеры (том с данными остаётся)
 	$(COMPOSE) down
 
-logs: ## Смотреть журнал приложения
-	$(COMPOSE) logs -f app
+logs: ## Журнал приложения и Nginx
+	$(COMPOSE) logs -f --tail 50 app1 app2 nginx
 
-ps: ## Состояние служб
-	$(COMPOSE) ps
+ps: ## Состояние служб и их здоровье
+	$(COMPOSE) ps -a
 
 shell: ## Оболочка внутри контейнера приложения
-	$(COMPOSE) run --rm app sh
+	$(COMPOSE) exec app1 sh
 
-container-check: ## Проверить образ: не root, нет latest, есть healthcheck
-	@bash scripts/container_check.sh
+container-check: ## Проверка окружения: latest, root, секреты, healthcheck, порты, лимиты
+	python3 scripts/container_check.py
+
+persist-drill: ## Учения: данные переживают пересоздание контейнеров и новый образ
+	bash scripts/container_drill.sh persist
+
+shutdown-drill: ## Учения: корректное завершение по SIGTERM
+	bash scripts/container_drill.sh shutdown
+
+failover-drill: ## Учения: балансировка, отказ узла, повтор, ограничение частоты
+	bash scripts/container_drill.sh failover
+
+restore-new-volume: ## Восстановить базу в НОВЫЙ том: make restore-new-volume FILE=…
+	@test -n "$(FILE)" || (echo "Укажите файл: make restore-new-volume FILE=\$$(ls -t backups/*.dump | head -1)" && exit 1)
+	bash scripts/container_drill.sh new-volume FILE=$(FILE)
+
+lock: ## Пересобрать requirements.lock с контрольными суммами (нужен pip-tools)
+	$(VENV)/bin/pip-compile -q --generate-hashes --strip-extras --no-emit-index-url \
+	  --output-file requirements.lock requirements.txt
+	$(VENV)/bin/pip-compile -q --generate-hashes --strip-extras --no-emit-index-url \
+	  --output-file requirements-dev.lock requirements-dev.txt
 
 # --------------------------------------------------------------------------- #
 # Данные
@@ -138,7 +180,7 @@ test-cov: ## Тесты с отчётом о покрытии в консоль
 	$(RUN) pytest --cov=app --cov-report=term-missing
 
 test-report: ## Тесты с отчётами для CI: junit, coverage xml и html
-	@mkdir -p reports
+	@mkdir -p reports && chmod a+rwx reports
 	$(RUN) pytest \
 	  --junitxml=reports/junit.xml \
 	  --cov=app --cov-report=term-missing \
@@ -153,7 +195,7 @@ types: ## Проверка типов
 	$(RUN) mypy app scripts
 
 sast: ## Статический анализ на безопасность (ТЗ 7.1)
-	@mkdir -p reports
+	@mkdir -p reports && chmod a+rwx reports
 	$(RUN) sh -c "bandit -q -c pyproject.toml -r app scripts \
 	  -f json -o reports/bandit.json; bandit -q -c pyproject.toml -r app scripts"
 
@@ -191,5 +233,6 @@ verify-local: ## Полная проверка, явно без контейне
 verify-docker: ## Полная проверка, явно в контейнерах
 	@$(MAKE) --no-print-directory LOCAL=0 verify
 
-clean: ## Убрать контейнеры и данные базы
-	$(COMPOSE) down -v --remove-orphans
+clean: ## ОПАСНО: удалить контейнеры И ТОМ С ДАННЫМИ базы
+	@read -r -p "Удалить контейнеры и том с данными базы? [да/нет] " a && [ "$$a" = "да" ]
+	$(COMPOSE) --profile test down -v --remove-orphans
