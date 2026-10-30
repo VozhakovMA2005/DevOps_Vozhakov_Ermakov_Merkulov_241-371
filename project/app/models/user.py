@@ -75,5 +75,5 @@ class AppUser(TimestampMixin, Base):
     def can_write(self) -> bool:
         return self.role in WRITE_ROLES
 
-    def __repr__(self) -> str:  # pragma: no cover
+    def __repr__(self) -> str:  # pragma: no cover — текст для отладки, в тестах не проверяется
         return f"<AppUser {self.username} {self.role.value}>"
