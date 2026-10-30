@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from app.deps import AppConfig, CurrentUser, DbSession, FundAdmin, page_params
 from app.errors import ImportFormatError, NotFound, PayloadTooLarge
@@ -69,7 +70,11 @@ async def import_rooms(
     if not content:
         raise ImportFormatError("Файл пустой", details={"filename": filename})
 
-    job = service.import_rooms(
+    # Разбор и запись файла — долгая синхронная работа. Внутри async-обработчика
+    # она остановила бы цикл событий: экземпляр перестал бы отвечать всем,
+    # включая healthcheck, и был бы помечен нездоровым. Поэтому — в пуле потоков
+    job = await run_in_threadpool(
+        service.import_rooms,
         session,
         content=content,
         filename=filename,

@@ -7,7 +7,16 @@ def test_healthz_is_open(client):
     """Служебные адреса доступны без входа (ТЗ 4.6)."""
     response = client.get("/healthz")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
+
+
+def test_instance_is_reported(client):
+    """За балансировщиком видно, какой экземпляр ответил (ЛР4, доп. задание)."""
+    response = client.get("/healthz")
+    instance = response.headers["X-Instance"]
+    assert instance
+    assert response.json()["instance"] == instance
+    assert client.get("/version").json()["instance"] == instance
 
 
 def test_readyz_reports_migrations(client):
