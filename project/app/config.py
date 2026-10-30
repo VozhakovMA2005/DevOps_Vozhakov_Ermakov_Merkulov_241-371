@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from dataclasses import dataclass
 
 APP_ENVS = ("development", "test", "production")
@@ -46,6 +47,9 @@ class Config:
     max_upload_bytes: int
     cookie_secure: bool
     git_commit: str
+    #: Имя экземпляра: в каком из нескольких процессов обработан запрос.
+    #: Нужно, когда за балансировщиком работает больше одного экземпляра
+    instance_id: str = ""
 
     @property
     def is_production(self) -> bool:
@@ -150,4 +154,7 @@ def load_config() -> Config:
         # срабатывает — страница возвращает на форму.
         cookie_secure=_bool("COOKIE_SECURE", app_env == "production"),
         git_commit=os.getenv("GIT_COMMIT", "unknown").strip() or "unknown",
+        # В контейнере имя узла — это идентификатор контейнера; задать своё
+        # можно переменной INSTANCE_ID (например app-1, app-2)
+        instance_id=os.getenv("INSTANCE_ID", "").strip() or socket.gethostname(),
     )

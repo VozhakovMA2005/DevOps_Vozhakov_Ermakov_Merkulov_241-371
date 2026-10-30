@@ -23,7 +23,7 @@ from app.context import get_request_id, new_request_id, set_request_id
 from app.errors import ApiError
 from app.logging_setup import configure_logging
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 
 log = logging.getLogger("audfond")
 access_log = logging.getLogger("audfond.access")
@@ -98,12 +98,19 @@ def create_app(config: Config | None = None) -> FastAPI:
         db.init_engine(config.database_url)
         log.info(
             "AudFond запущен",
-            extra={"event": "startup", "version": __version__, "app_env": config.app_env},
+            extra={
+                "event": "startup",
+                "version": __version__,
+                "app_env": config.app_env,
+                "instance": config.instance_id,
+            },
         )
         yield
         # ТЗ 4.2: при остановке закрываем соединения с базой
         db.dispose_engine()
-        log.info("AudFond остановлен", extra={"event": "shutdown"})
+        log.info(
+            "AudFond остановлен", extra={"event": "shutdown", "instance": config.instance_id}
+        )
 
     app = FastAPI(
         title="AudFond — аудиторный фонд университета",
@@ -126,6 +133,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         started = time.perf_counter()
         response = await call_next(request)
         response.headers["X-Request-Id"] = get_request_id()
+        # Какой экземпляр ответил: видно за балансировщиком (Nginx)
+        response.headers["X-Instance"] = config.instance_id
         access_log.info(
             "%s %s -> %s",
             request.method,

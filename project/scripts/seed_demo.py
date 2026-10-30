@@ -243,10 +243,17 @@ def write_sample_file() -> Path | None:
         sheet.append(row)
 
     target = Path(__file__).resolve().parents[1] / "reports"
-    target.mkdir(exist_ok=True)
     path = target / "демо-реестр-помещений.xlsx"
-    workbook.save(path)
-    workbook.close()
+    try:
+        target.mkdir(exist_ok=True)
+        workbook.save(path)
+    except OSError:
+        # В контейнере файловая система только для чтения: данные засеяны,
+        # а образец файла скачивается из приложения (шаблон) или делается
+        # командой make seed на машине без контейнеров
+        return None
+    finally:
+        workbook.close()
     return path
 
 

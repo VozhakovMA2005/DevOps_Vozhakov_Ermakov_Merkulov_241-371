@@ -30,6 +30,7 @@ CONFIG_VARS = (
     "PAGE_SIZE_MAX",
     "MAX_UPLOAD_BYTES",
     "GIT_COMMIT",
+    "INSTANCE_ID",
 )
 
 
@@ -49,6 +50,13 @@ def test_defaults(monkeypatch):
     assert config.page_size_default == 50
     assert config.login_max_attempts == 5
     assert config.is_production is False
+    # Без INSTANCE_ID экземпляр называется именем узла (в контейнере — его id)
+    assert config.instance_id
+
+
+def test_instance_id_from_environment(monkeypatch):
+    _env(monkeypatch, INSTANCE_ID="app-2")
+    assert load_config().instance_id == "app-2"
 
 
 def test_database_url_is_required(monkeypatch):

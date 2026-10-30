@@ -18,8 +18,8 @@ router = APIRouter(tags=["служебные"])
 
 
 @router.get("/healthz", summary="Живость приложения")
-def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+def healthz(request: Request) -> dict[str, str]:
+    return {"status": "ok", "instance": request.app.state.config.instance_id}
 
 
 @router.get("/readyz", summary="Готовность: база и миграции")
@@ -54,4 +54,5 @@ def version(request: Request) -> dict[str, str]:
         "version": __version__,
         "commit": config.git_commit,
         "app_env": config.app_env,
+        "instance": config.instance_id,
     }
