@@ -1,8 +1,18 @@
-.git
-.gitignore
+# Что НЕ попадает в контекст сборки образа (ЛР4, пункты 1, 2, 13).
+#
+# Главное — секреты: файлы окружения в образ не попадают никогда. Настройки
+# передаются контейнеру переменными окружения при запуске (пункт 4).
 .env
 .env.*
 !.env.example
+!.env.docker.example
+*.pem
+*.key
+
+# История и служебные каталоги: в образе они не нужны, а .git ещё и меняется
+# с каждым коммитом, ломая кэш сборки
+.git
+.gitignore.bak
 .venv
 venv
 __pycache__
@@ -10,9 +20,12 @@ __pycache__
 .pytest_cache
 .ruff_cache
 .mypy_cache
+.coverage
 htmlcov
+
+# Данные и артефакты: копии базы, отчёты, снимки задач
 backups
-docs
-deploy
-README.md
-CONTRIBUTING.md
+reports
+*.dump
+by-task*
+git-history*

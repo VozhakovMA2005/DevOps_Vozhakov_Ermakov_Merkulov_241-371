@@ -58,6 +58,7 @@ SKIP_DIRS = frozenset(
         "by-task",
         "by-task-lr2",
         "by-task-lr3",
+        "by-task-lr4",
     }
 )
 
@@ -91,6 +92,7 @@ FORBIDDEN_NAMES = (
     ".env.local",
     ".env.production",
     ".env.prod",
+    ".env.docker",
     "db-passwords",
     "id_rsa",
     "id_ed25519",
@@ -103,7 +105,7 @@ FORBIDDEN_NAMES = (
 FORBIDDEN_SUFFIXES = (".dump", ".pem", ".key", ".p12", ".pfx", ".sql.gz")
 
 #: Файлы-образцы: в них переменные есть, но значения обязаны быть заглушками
-EXAMPLE_FILES = ("env.example", "audfond.env.example")
+EXAMPLE_FILES = ("env.example", "audfond.env.example", "env.docker.example")
 
 #: Слова, которые делают значение заглушкой, а не секретом
 PLACEHOLDERS = (
@@ -180,29 +182,36 @@ ALLOWED: dict[str, str] = {
 }
 
 
-def gitignore_patterns() -> list[str]:
-    """Образцы из .gitignore — для случая, когда git недоступен."""
+def gitignore_patterns() -> list[tuple[str, bool]]:
+    """Образцы из .gitignore — для случая, когда git недоступен.
+
+    Второе поле — образец-исключение (строка с «!»): такой файл в
+    репозиторий попадает, хотя подходит под образец выше. Без этого образцы
+    .env.example и .env.docker.example считались бы игнорируемыми и не
+    проверялись бы на заглушки.
+    """
     path = ROOT / ".gitignore"
     if not path.exists():
         return []
     patterns = []
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if not line or line.startswith(("#", "!")):
+        if not line or line.startswith("#"):
             continue
-        patterns.append(line.rstrip("/"))
+        negated = line.startswith("!")
+        patterns.append((line.lstrip("!").rstrip("/"), negated))
     return patterns
 
 
-def is_ignored(relative: str, patterns: list[str]) -> bool:
+def is_ignored(relative: str, patterns: list[tuple[str, bool]]) -> bool:
+    """Как в git: последний подошедший образец решает, исключение — отменяет."""
     parts = relative.split("/")
     name = parts[-1]
-    for pattern in patterns:
-        if fnmatch(name, pattern) or fnmatch(relative, pattern):
-            return True
-        if pattern in parts:
-            return True
-    return False
+    ignored = False
+    for pattern, negated in patterns:
+        if fnmatch(name, pattern) or fnmatch(relative, pattern) or pattern in parts:
+            ignored = not negated
+    return ignored
 
 
 def iter_files() -> list[Path]:
