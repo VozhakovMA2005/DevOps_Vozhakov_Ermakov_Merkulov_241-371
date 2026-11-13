@@ -213,8 +213,12 @@ restore-local: ## Восстановление без контейнеров: ma
 # Проверки
 # --------------------------------------------------------------------------- #
 
-test: ## Прогнать тесты
-	$(RUN) pytest -c pyproject.toml
+# Пороги покрытия ТЗ 7.1 — часть make verify: 70% общий (fail_under в
+# pyproject.toml) и 80% для сервисного слоя
+test: ## Прогнать тесты с порогами покрытия 70% и 80%
+	$(RUN) sh -c "pytest -c pyproject.toml --cov=app --cov-config=pyproject.toml \
+	  --cov-report=term:skip-covered && \
+	  coverage report --rcfile=pyproject.toml --include='app/services/*' --skip-covered --fail-under=80"
 
 # Стадии test и test-int из ТЗ 7.1 по отдельности. Модульным тестам база не
 # нужна, они идут секунды. Интеграционные идут на PostgreSQL и проверяют оба
