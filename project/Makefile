@@ -66,7 +66,7 @@ endif
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
-        shutdown-drill failover-drill restore-new-volume lock clean deps-check
+        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -131,6 +131,12 @@ shell: ## Оболочка внутри контейнера приложени�
 
 container-check: ## Проверка окружения: latest, root, секреты, healthcheck, порты, лимиты
 	python3 scripts/container_check.py
+
+# Сканер работает в контейнере и в любом режиме нуждается в Docker. Образ
+# передаётся ему файлом, без доступа к docker.sock
+image-scan: ## Анализ образа приложения на уязвимости (Trivy): HIGH и CRITICAL с исправлением
+	@mkdir -p reports && chmod a+rwx reports
+	python3 scripts/image_scan.py
 
 persist-drill: ## Учения: данные переживают пересоздание контейнеров и новый образ
 	bash scripts/container_drill.sh persist
