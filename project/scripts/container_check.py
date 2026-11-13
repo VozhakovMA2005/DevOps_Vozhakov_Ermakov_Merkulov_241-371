@@ -139,7 +139,7 @@ def check_files(r: Report) -> None:
         r.check(
             pinned(image),
             f"Dockerfile: базовый образ закреплён — {image}",
-            "латест запрещён: укажите точную версию, например python:3.12.8-slim",
+            "латест запрещён: укажите точную версию, например python:3.12.16-slim",
         )
 
     runtime = text.split("AS runtime", 1)[-1].split("\nFROM ", 1)[0]
