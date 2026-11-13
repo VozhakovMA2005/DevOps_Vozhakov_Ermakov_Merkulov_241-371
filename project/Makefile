@@ -44,7 +44,10 @@ DRILL_PREFIX := $(RUN)
 DEPS_CMD := $(RUN) python scripts/deps_check.py
 DEPS_PRE := true
 else
-RUN  := $(COMPOSE) --profile test run --rm tests
+# --build: проверки идут по ТЕКУЩЕМУ коду. Без него compose берёт уже собранный
+# образ проверок, и после правки кода проверялась бы прежняя копия дерева.
+# Неизменённые слои берутся из кэша, пересборка без правок — секунды
+RUN  := $(COMPOSE) --profile test run --rm --build tests
 MODE := в контейнерах (docker compose, .env.docker)
 MIGRATE_CMD := $(COMPOSE) run --rm migrate
 ADMIN_CMD   := $(COMPOSE) run --rm migrate admin
@@ -68,7 +71,7 @@ endif
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
-        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard
+        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard ci checks-image
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -99,6 +102,9 @@ docker-env: ## Создать .env.docker со случайными пароля
 
 build: ## Собрать образы приложения и проверок
 	$(COMPOSE) build migrate
+	$(COMPOSE) --profile test build tests
+
+checks-image: ## Собрать только образ проверок (первая стадия make ci в контейнерах)
 	$(COMPOSE) --profile test build tests
 
 # Изменение окружения — только после успешной проверки (пункт 14): сначала
@@ -132,7 +138,8 @@ shell: ## Оболочка внутри контейнера приложени�
 	$(COMPOSE) exec app1 sh
 
 container-check: ## Проверка окружения: latest, root, секреты, healthcheck, порты, лимиты
-	python3 scripts/container_check.py
+	@mkdir -p reports
+	set -o pipefail; python3 scripts/container_check.py | tee reports/container-check.txt
 
 # Сканер работает в контейнере и в любом режиме нуждается в Docker. Образ
 # передаётся ему файлом, без доступа к docker.sock
@@ -201,20 +208,29 @@ test: ## Прогнать тесты
 test-cov: ## Тесты с отчётом о покрытии в консоль
 	$(RUN) pytest --cov=app --cov-report=term-missing
 
-test-report: ## Тесты с отчётами для CI: junit, coverage xml и html
+# Оба порога покрытия из ТЗ 7.1 за один прогон: общий 70% (fail_under в
+# pyproject.toml) и 80% для сервисного слоя — по тем же данным покрытия
+test-report: ## Тесты с отчётами для CI: junit, coverage xml и html, оба порога покрытия
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) pytest \
+	$(RUN) sh -c "pytest \
 	  --junitxml=reports/junit.xml \
 	  --cov=app --cov-report=term-missing \
 	  --cov-report=xml:reports/coverage.xml \
-	  --cov-report=html:reports/htmlcov
-	@echo "Отчёты: reports/junit.xml, reports/coverage.xml, reports/htmlcov/index.html"
+	  --cov-report=html:reports/htmlcov && \
+	  coverage json -q --include='app/services/*' -o reports/coverage-services.json && \
+	  coverage report --include='app/services/*' --skip-covered --fail-under=80"
+	@echo "Отчёты: reports/junit.xml, reports/coverage.xml, reports/htmlcov/, reports/coverage-services.json"
 
-quality: ## Линтер и форматирование
-	$(RUN) sh -c "ruff check . && ruff format --check ."
+# Отчёт линтера пишется первым запуском, итог даёт второй: так отчёт есть и
+# тогда, когда проверка падает, — именно тогда он и нужен
+quality: ## Линтер и форматирование (отчёт reports/ruff.xml)
+	@mkdir -p reports && chmod a+rwx reports
+	$(RUN) sh -c "ruff check --output-format=junit --output-file=reports/ruff.xml . ; \
+	  ruff check . && ruff format --check ."
 
-types: ## Проверка типов
-	$(RUN) mypy app scripts
+types: ## Проверка типов (отчёт reports/mypy.xml)
+	@mkdir -p reports && chmod a+rwx reports
+	$(RUN) mypy app scripts --junit-xml reports/mypy.xml
 
 sast: ## Статический анализ на безопасность (ТЗ 7.1)
 	@mkdir -p reports && chmod a+rwx reports
@@ -281,6 +297,11 @@ restore-drill-local: ## Те же учения по восстановлению
 
 verify: quality types sast secrets waivers migrate-check test ## Полная проверка перед запросом на слияние
 	@printf '\n\033[32mВсе проверки пройдены\033[0m (%s)\n' "$(MODE)"
+
+# Весь конвейер: те же цели, что вызывает сервер CI, в том же порядке.
+# Порядок стадий и отметка для публикации — scripts/ci_local.sh
+ci: ## Конвейер CI локально: стиль, безопасность, тесты, миграции, копия, сборка, образ
+	@MAKE="$(MAKE)" bash scripts/ci_local.sh
 
 verify-local: ## Полная проверка, явно без контейнеров
 	@$(MAKE) --no-print-directory LOCAL=1 verify
