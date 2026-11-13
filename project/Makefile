@@ -68,7 +68,7 @@ endif
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
-        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch
+        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -237,6 +237,23 @@ secrets-branch: ## Секреты во ВСЕХ коммитах ветки, в�
 
 waivers: ## Запрет исключений без обоснования и снижения порогов (пункт 14)
 	$(RUN) python scripts/waiver_check.py
+
+# Защита файлов приёмки. Сценарий берётся в той редакции, что уже лежит в
+# BASE, а не в проверяемой ветке: иначе ослабить проверку можно было бы той же
+# правкой, которую она должна поймать. Если в BASE сценария ещё нет (он
+# появляется впервые), запускается версия из ветки. Нужен git — идёт на машине
+GUARD_PATH := $(shell git rev-parse --show-prefix 2>/dev/null)scripts/acceptance_guard.py
+
+guard: ## Защита файлов приёмки: удалённые тесты, ослабленные проверки [BASE=origin/main]
+	@mkdir -p reports
+	@if git cat-file -e "$(BASE):$(GUARD_PATH)" 2>/dev/null; then \
+	  echo "Сценарий проверки — из $(BASE): ослабить его в этой же ветке нельзя"; \
+	  git show "$(BASE):$(GUARD_PATH)" > reports/.acceptance_guard_base.py; \
+	  python3 reports/.acceptance_guard_base.py --base "$(BASE)" --project-dir . --report reports/guard.md; \
+	else \
+	  echo "В $(BASE) сценария ещё нет: запускается версия из ветки"; \
+	  python3 scripts/acceptance_guard.py --base "$(BASE)" --project-dir . --report reports/guard.md; \
+	fi
 
 deps-check: ## Зависимости из lock-файлов — на известные уязвимости (нужен pypi.org)
 	@mkdir -p reports && chmod a+rwx reports
