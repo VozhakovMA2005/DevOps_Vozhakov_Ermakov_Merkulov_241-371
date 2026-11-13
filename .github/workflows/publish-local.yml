@@ -1,0 +1,79 @@
+# Публикация в локальный реестр стенда («локальный docker hub», ЛР5 пункт 2).
+#
+# Отдельный workflow, запускаемый завершением конвейера CI (workflow_run):
+#   - GitHub берёт этот файл из main, а не из ветки;
+#   - конвейер CI не ждёт стенда: если audfond-app выключен, ждёт только эта
+#     публикация, а результат CI уже известен;
+#   - публикуется ровно тот образ, что собрал и проверил конвейер: он
+#     скачивается артефактом прогона CI.
+#
+# Выполняется собственным исполнителем на audfond-app (метка audfond):
+# реестр слушает только 127.0.0.1:5000. Включается переменной репозитория
+# LOCAL_REGISTRY=true. Исполнитель работает от deployer и может управлять
+# Docker стенда, поэтому подключать его можно только к репозиторию, где все
+# участники с правом push и так администрируют стенд (docs/ci.md, 6.9).
+
+name: publish-local
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publish-local
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: project
+
+jobs:
+  publish-local:
+    name: publish-local
+    if: >-
+      vars.LOCAL_REGISTRY == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: [self-hosted, linux, audfond]
+    timeout-minutes: 15
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Образ из прогона CI
+        uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      # Загрузка архива ставит образу имя audfond:<версия> — то же, по которому
+      # работает compose стенда. Прежний образ возвращается под это имя, а
+      # образ CI публикуется под своим: работающее окружение стенда не меняется
+      - name: Загрузить образ, не трогая образ стенда
+        run: |
+          image="$(make -s print-app-image)"
+          previous="$(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null || true)"
+          gunzip -c "$RUNNER_TEMP/audfond-image.tar.gz" | docker image load
+          docker tag "$image" "audfond-ci:sha-$SHA"
+          if [ -n "$previous" ]; then docker tag "$previous" "$image"; else docker image rm "$image"; fi
+      - name: Отметка о пройденном конвейере
+        run: mkdir -p reports && echo "$SHA" > reports/ci-passed
+      - name: Локальный реестр запущен
+        run: make registry-up
+      - name: make push
+        run: make push REGISTRY=localhost:5000 APP_IMAGE="audfond-ci:sha-$SHA"
+      - name: Опубликованные теги
+        run: make registry-ls
