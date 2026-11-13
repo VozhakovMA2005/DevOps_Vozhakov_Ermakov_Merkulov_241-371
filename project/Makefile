@@ -214,51 +214,51 @@ restore-local: ## Восстановление без контейнеров: ma
 # --------------------------------------------------------------------------- #
 
 test: ## Прогнать тесты
-	$(RUN) pytest
+	$(RUN) pytest -c pyproject.toml
 
 # Стадии test и test-int из ТЗ 7.1 по отдельности. Модульным тестам база не
 # нужна, они идут секунды. Интеграционные идут на PostgreSQL и проверяют оба
 # порога покрытия: обработчики и сервисный слой покрывают именно они
 test-unit: ## Модульные тесты, без базы (отчёт reports/junit-unit.xml)
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) pytest tests/unit --junitxml=reports/junit-unit.xml
+	$(RUN) pytest -c pyproject.toml tests/unit --junitxml=reports/junit-unit.xml
 
 test-int: ## Интеграционные тесты на PostgreSQL и пороги покрытия 70% и 80% (отчёты для CI)
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) sh -c "pytest tests/integration \
+	$(RUN) sh -c "pytest -c pyproject.toml tests/integration \
 	  --junitxml=reports/junit-int.xml \
-	  --cov=app --cov-report=term-missing:skip-covered \
+	  --cov=app --cov-config=pyproject.toml --cov-report=term-missing:skip-covered \
 	  --cov-report=xml:reports/coverage.xml \
 	  --cov-report=html:reports/htmlcov && \
-	  coverage json -q --include='app/services/*' -o reports/coverage-services.json && \
-	  coverage report --include='app/services/*' --skip-covered --fail-under=80"
+	  coverage json --rcfile=pyproject.toml -q --include='app/services/*' -o reports/coverage-services.json && \
+	  coverage report --rcfile=pyproject.toml --include='app/services/*' --skip-covered --fail-under=80"
 
 test-cov: ## Тесты с отчётом о покрытии в консоль
-	$(RUN) pytest --cov=app --cov-report=term-missing
+	$(RUN) pytest -c pyproject.toml --cov=app --cov-config=pyproject.toml --cov-report=term-missing
 
 # Оба порога покрытия из ТЗ 7.1 за один прогон: общий 70% (fail_under в
 # pyproject.toml) и 80% для сервисного слоя — по тем же данным покрытия
 test-report: ## Тесты с отчётами для CI: junit, coverage xml и html, оба порога покрытия
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) sh -c "pytest \
+	$(RUN) sh -c "pytest -c pyproject.toml \
 	  --junitxml=reports/junit.xml \
-	  --cov=app --cov-report=term-missing \
+	  --cov=app --cov-config=pyproject.toml --cov-report=term-missing \
 	  --cov-report=xml:reports/coverage.xml \
 	  --cov-report=html:reports/htmlcov && \
-	  coverage json -q --include='app/services/*' -o reports/coverage-services.json && \
-	  coverage report --include='app/services/*' --skip-covered --fail-under=80"
+	  coverage json --rcfile=pyproject.toml -q --include='app/services/*' -o reports/coverage-services.json && \
+	  coverage report --rcfile=pyproject.toml --include='app/services/*' --skip-covered --fail-under=80"
 	@echo "Отчёты: reports/junit.xml, reports/coverage.xml, reports/htmlcov/, reports/coverage-services.json"
 
 # Отчёт линтера пишется первым запуском, итог даёт второй: так отчёт есть и
 # тогда, когда проверка падает, — именно тогда он и нужен
 quality: ## Линтер и форматирование (отчёт reports/ruff.xml)
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) sh -c "ruff check --output-format=junit --output-file=reports/ruff.xml . ; \
-	  ruff check . && ruff format --check ."
+	$(RUN) sh -c "ruff check --config pyproject.toml --output-format=junit --output-file=reports/ruff.xml . ; \
+	  ruff check --config pyproject.toml . && ruff format --config pyproject.toml --check ."
 
 types: ## Проверка типов (отчёт reports/mypy.xml)
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) mypy app scripts --junit-xml reports/mypy.xml
+	$(RUN) mypy --config-file pyproject.toml app scripts --junit-xml reports/mypy.xml
 
 sast: ## Статический анализ на безопасность (ТЗ 7.1)
 	@mkdir -p reports && chmod a+rwx reports
@@ -285,17 +285,21 @@ waivers: ## Запрет исключений без обоснования и �
 	$(RUN) python scripts/waiver_check.py
 
 # Защита файлов приёмки. Сценарий берётся в той редакции, что уже лежит в
-# BASE, а не в проверяемой ветке: иначе ослабить проверку можно было бы той же
-# правкой, которую она должна поймать. Если в BASE сценария ещё нет (он
-# появляется впервые), запускается версия из ветки. Нужен git — идёт на машине
+# BASE, а не в проверяемой ветке, и запускается из временного каталога вне
+# дерева с ключом -I: файл, подложенный в ветку (например argparse.py рядом),
+# подменить модуль не сможет. Сам Makefile при этом — из ветки, поэтому на
+# GitHub та же проверка идёт отдельным workflow guard-main из main
+# (.github/workflows/guard-main.yml). Нужен git — идёт на машине
 GUARD_PATH := $(shell git rev-parse --show-prefix 2>/dev/null)scripts/acceptance_guard.py
 
 guard: ## Защита файлов приёмки: удалённые тесты, ослабленные проверки [BASE=origin/main]
 	@mkdir -p reports
 	@if git cat-file -e "$(BASE):$(GUARD_PATH)" 2>/dev/null; then \
-	  echo "Сценарий проверки — из $(BASE): ослабить его в этой же ветке нельзя"; \
-	  git show "$(BASE):$(GUARD_PATH)" > reports/.acceptance_guard_base.py; \
-	  python3 reports/.acceptance_guard_base.py --base "$(BASE)" --project-dir . --report reports/guard.md; \
+	  echo "Сценарий проверки — из $(BASE), а не из этой ветки"; \
+	  tmp="$$(mktemp -d)"; \
+	  git show "$(BASE):$(GUARD_PATH)" > "$$tmp/acceptance_guard.py"; \
+	  python3 -I "$$tmp/acceptance_guard.py" --base "$(BASE)" --project-dir . --report reports/guard.md; \
+	  rc=$$?; rm -rf "$$tmp"; exit $$rc; \
 	else \
 	  echo "В $(BASE) сценария ещё нет: запускается версия из ветки"; \
 	  python3 scripts/acceptance_guard.py --base "$(BASE)" --project-dir . --report reports/guard.md; \
@@ -316,8 +320,8 @@ mutants: ## Мутационная проверка: подменить усло
 	$(RUN) python scripts/mutation_check.py
 
 coverage-services: ## Отдельный порог покрытия для сервисного слоя: 80% (ТЗ 7.1)
-	$(RUN) sh -c "pytest -q --cov=app >/dev/null && \
-	  coverage report --include='app/services/*' --fail-under=80"
+	$(RUN) sh -c "pytest -c pyproject.toml -q --cov=app --cov-config=pyproject.toml >/dev/null && \
+	  coverage report --rcfile=pyproject.toml --include='app/services/*' --fail-under=80"
 
 migrate-drill: ## Учения по миграциям: чистая база и база с данными (пункт 9)
 	$(DRILL_PREFIX) bash scripts/migrate_drill.sh

@@ -318,8 +318,10 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           BEFORE: ${{ github.event.before }}
-      - name: make waivers guard ci-sync codeowners-check
-        run: make waivers guard ci-sync codeowners-check BASE="$BASE"
+      # -k: каждая проверка выполняется, даже если упала предыдущая — на
+      # запросе видны все находки сразу, итог всё равно красный
+      - name: make -k waivers guard ci-sync codeowners-check
+        run: make -k waivers guard ci-sync codeowners-check BASE="$BASE"
       - name: Отчёт guard — в сводку задачи
         if: always()
         run: |

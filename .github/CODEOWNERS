@@ -6,6 +6,7 @@
 # может, поэтому у каждого пути не меньше двух ответственных — одобряет тот,
 # кто не автор.
 #
+# Порядок важен: из правил, подошедших к файлу, действует последнее.
 # Список путей совпадает с CRITICAL в project/scripts/acceptance_guard.py:
 # make codeowners-check (стадия guard) проверяет, что каждый критический файл
 # репозитория здесь закреплён.
@@ -35,6 +36,18 @@
 /project/.trivyignore.yaml                  @VozhakovMA2005 @GrigoryMerkulov
 /project/deploy/                            @GrigoryMerkulov @VozhakovMA2005
 /project/migrations/env.py                  @GrigoryMerkulov @MikhailErm
+
+# Настройки инструментов проверок: ruff, mypy, pytest и coverage читают эти
+# файлы раньше pyproject.toml, а conftest.py подключается к любому прогону
+/project/*.toml                             @GrigoryMerkulov @MikhailErm
+/project/*.ini                              @GrigoryMerkulov @MikhailErm
+/project/*.cfg                              @GrigoryMerkulov @MikhailErm
+/project/.coveragerc                        @GrigoryMerkulov @MikhailErm
+/project/conftest.py                        @MikhailErm @VozhakovMA2005 @GrigoryMerkulov
+
+# Сценарии: через них запускаются сами проверки (run.sh, lib.sh, учения),
+# поэтому критичен весь каталог. Частные правила ниже уточняют ответственных
+/project/scripts/                           @MikhailErm @GrigoryMerkulov @VozhakovMA2005
 
 # Сценарии проверок
 /project/scripts/acceptance_guard.py        @MikhailErm @GrigoryMerkulov

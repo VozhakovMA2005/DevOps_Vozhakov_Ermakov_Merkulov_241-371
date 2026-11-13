@@ -270,3 +270,63 @@ def test_skip_mentioned_in_string_is_not_a_skip() -> None:
     assert guard.count_skips(source) == 0
     assert guard.count_skips("import pytest\npytestmark = pytest.mark.xfail\n") == 1
     assert guard.count_skips("def test_a():\n    pytest.skip('нет базы')\n") == 1
+
+
+def test_always_true_assert_is_not_a_check() -> None:
+    before = "def test_a():\n    assert x == 1\n"
+    after = "def test_a():\n    assert True or x == 1\n"
+
+    findings = guard.compare_tests({"tests/t.py": before}, {"tests/t.py": after}, {})
+
+    assert findings == ["tests/t.py::test_a: проверок стало меньше — 1 → 0"]
+
+
+def test_replaced_check_command_is_found() -> None:
+    after = MAKEFILE.replace("\t$(RUN) ruff check .", '\t@echo "ruff: ok"')
+
+    findings = guard.compare_makefile(MAKEFILE, after)
+
+    assert len(findings) == 1
+    assert findings[0].startswith("Makefile: из команды make quality убрано — $(RUN)")
+
+
+def test_lowered_threshold_in_command_is_found() -> None:
+    before = MAKEFILE.replace("$(RUN) pytest", "$(RUN) pytest --fail-under=80")
+    after = MAKEFILE.replace("$(RUN) pytest", "$(RUN) pytest --fail-under=0")
+
+    assert guard.compare_makefile(before, after) == [
+        "Makefile: из команды make test убрано — --fail-under=80"
+    ]
+
+
+def test_added_options_are_not_a_weakening() -> None:
+    after = MAKEFILE.replace(
+        "$(RUN) pytest", "$(RUN) pytest -c pyproject.toml --strict-markers"
+    )
+
+    assert guard.compare_makefile(MAKEFILE, after) == []
+
+
+def test_changed_check_variable_is_found() -> None:
+    before = MAKEFILE.replace("RUN := bash scripts/run.sh", "RUN := bash scripts/run.sh")
+    after = MAKEFILE.replace("RUN := bash scripts/run.sh", "RUN := true")
+
+    findings = guard.compare_makefile(before, after)
+
+    assert findings == ["Makefile: из переменной RUN убрано — bash, scripts/run.sh"]
+
+
+def test_variables_with_continuation_are_parsed() -> None:
+    text = "DEPS_CMD := docker run --rm \\\n  -v a:b img python x.py\nRUN := bash run.sh\n"
+
+    found = guard.parse_variables(text)
+
+    assert found["DEPS_CMD"] == ["docker run --rm    -v a:b img python x.py"]
+    assert found["RUN"] == ["bash run.sh"]
+
+
+def test_pytest_hooks_are_counted_in_code_only() -> None:
+    hook = "def pytest_collection_modifyitems(items):\n    items[:] = []\n"
+
+    assert len(guard.PYTEST_HOOKS.findall(hook)) == 1
+    assert guard.PYTEST_HOOKS.findall("# pytest_collection_modifyitems\n") == []

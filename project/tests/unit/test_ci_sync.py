@@ -129,3 +129,30 @@ def test_publish_without_gate_is_found() -> None:
     early = WORKFLOW.replace("  publish:\n    needs: ci-gate", "  publish:\n    needs: build")
 
     assert any("«publish» должна ждать ci-gate" in p for p in problems(early))
+
+
+def test_exit_zero_and_disabled_steps_are_found() -> None:
+    weak = WORKFLOW.replace("run: make types", "run: make types; exit 0").replace(
+        "      - name: x\n        run: make sast",
+        "      - name: x\n        if: false\n        run: make sast",
+    )
+
+    found = problems(weak)
+
+    assert any("«types»: ошибка make подавлена" in p for p in found)
+    assert any("«sast»: шаг или задача выключены" in p for p in found)
+
+
+def test_expression_continue_on_error_is_found() -> None:
+    weak = WORKFLOW.replace(
+        "  lint:\n    name: lint\n",
+        "  lint:\n    name: lint\n    continue-on-error: ${{ true }}\n",
+    )
+
+    assert any("«lint»: continue-on-error" in p for p in problems(weak))
+
+
+def test_action_pinned_by_sha_is_allowed() -> None:
+    pinned = WORKFLOW.replace("actions/checkout@v6", "actions/checkout@" + "a" * 40)
+
+    assert problems(pinned) == []
