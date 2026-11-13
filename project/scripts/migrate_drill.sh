@@ -3,6 +3,9 @@
 #
 # Проверяется два разных случая, и второй важнее первого.
 #
+# Ключи: --schema-only — только шаг 1 (make schema-check), --clean-only —
+# шаги 1 и 2 (make migrate-check), без ключа — всё (make migrate-drill).
+#
 #   1. ЧИСТАЯ БАЗА. Накат с нуля до последней ревизии, затем alembic check:
 #      схема обязана совпадать с моделями. Это ловит ситуацию «модель поменяли,
 #      миграцию забыли».
@@ -32,7 +35,11 @@ require_command psql "Поставьте postgresql-client."
 load_admin_env
 
 CLEAN_ONLY=0
+SCHEMA_ONLY=0
 [ "${1:-}" = "--clean-only" ] && CLEAN_ONLY=1
+# --schema-only: только накат на чистую базу и сверка схемы с моделями
+# (стадия schema-check, ТЗ 7.1). Обратимость проверяет --clean-only
+[ "${1:-}" = "--schema-only" ] && SCHEMA_ONLY=1
 
 PY="$(python_bin)"
 STAMP="$(date +%s)"
@@ -82,6 +89,13 @@ TABLES="$(psql_on "$CLEAN_DB" -c "
     SELECT count(*) FROM information_schema.tables
      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")"
 ok "таблиц в схеме: $TABLES"
+
+if [ "$SCHEMA_ONLY" = "1" ]; then
+    step "Итог"
+    ok "схема после наката совпадает с моделями (alembic check)"
+    info "обратимость миграций: make migrate-check"
+    exit 0
+fi
 
 # --------------------------------------------------------------------------- #
 step "2. Полный откат и повторный накат"

@@ -28,7 +28,14 @@ def database_url() -> Iterator[str]:
     try:
         admin = psycopg.connect(ADMIN_DSN, autocommit=True, connect_timeout=3)
     except Exception as exc:  # pragma: no cover — ветка для окружения без базы
-        pytest.skip(f"PostgreSQL недоступен ({exc})")
+        # Отказ, а не пропуск: пропущенные интеграционные тесты выглядят как
+        # зелёный прогон, и конвейер принял бы изменение, не проверив его на
+        # базе. Модульным тестам база не нужна, они этой фикстуры не просят
+        pytest.fail(
+            f"PostgreSQL недоступен ({exc}). Интеграционные тесты без базы не "
+            "пропускаются: задайте TEST_ADMIN_DSN или ADMIN_DATABASE_URL",
+            pytrace=False,
+        )
 
     with admin:
         admin.execute(f'CREATE DATABASE "{name}"')

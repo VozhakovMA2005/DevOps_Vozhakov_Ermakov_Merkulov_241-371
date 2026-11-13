@@ -75,7 +75,8 @@ endif
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
         shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard ci checks-image \
-        push publish registry-up registry-down registry-ls
+        push publish registry-up registry-down registry-ls \
+        test-unit test-int schema-check secrets-scan build-app
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -107,6 +108,9 @@ docker-env: ## Создать .env.docker со случайными пароля
 build: ## Собрать образы приложения и проверок
 	$(COMPOSE) build migrate
 	$(COMPOSE) --profile test build tests
+
+build-app: ## Собрать только образ приложения (стадия build в CI)
+	$(COMPOSE) build migrate
 
 checks-image: ## Собрать только образ проверок (первая стадия make ci в контейнерах)
 	$(COMPOSE) --profile test build tests
@@ -180,6 +184,9 @@ migrate: ## Накатить миграции
 # Обратимость проверяется на ОДНОРАЗОВОЙ базе, а не на той, что в настройках:
 # downgrade base снёс бы все данные. Поэтому make verify безопасно запускать на
 # стенде с боевыми данными.
+schema-check: ## Схема базы совпадает с моделями: накат на одноразовую базу и alembic check
+	$(DRILL_PREFIX) bash scripts/migrate_drill.sh --schema-only
+
 migrate-check: ## Обратимость миграций на одноразовой базе: upgrade, downgrade, upgrade
 	$(DRILL_PREFIX) bash scripts/migrate_drill.sh --clean-only
 
@@ -208,6 +215,23 @@ restore-local: ## Восстановление без контейнеров: ma
 
 test: ## Прогнать тесты
 	$(RUN) pytest
+
+# Стадии test и test-int из ТЗ 7.1 по отдельности. Модульным тестам база не
+# нужна, они идут секунды. Интеграционные идут на PostgreSQL и проверяют оба
+# порога покрытия: обработчики и сервисный слой покрывают именно они
+test-unit: ## Модульные тесты, без базы (отчёт reports/junit-unit.xml)
+	@mkdir -p reports && chmod a+rwx reports
+	$(RUN) pytest tests/unit --junitxml=reports/junit-unit.xml
+
+test-int: ## Интеграционные тесты на PostgreSQL и пороги покрытия 70% и 80% (отчёты для CI)
+	@mkdir -p reports && chmod a+rwx reports
+	$(RUN) sh -c "pytest tests/integration \
+	  --junitxml=reports/junit-int.xml \
+	  --cov=app --cov-report=term-missing:skip-covered \
+	  --cov-report=xml:reports/coverage.xml \
+	  --cov-report=html:reports/htmlcov && \
+	  coverage json -q --include='app/services/*' -o reports/coverage-services.json && \
+	  coverage report --include='app/services/*' --skip-covered --fail-under=80"
 
 test-cov: ## Тесты с отчётом о покрытии в консоль
 	$(RUN) pytest --cov=app --cov-report=term-missing
@@ -251,6 +275,8 @@ secrets: ## Поиск секретов и запрещённых файлов �
 
 # Коммиты ветки смотрятся на машине, а не в контейнере: нужен git и история,
 # а в образ проверок .git не попадает. Сценарий — только стандартная библиотека
+secrets-scan: secrets secrets-branch ## Стадия secrets-scan (ТЗ 7.1): дерево и все коммиты ветки
+
 secrets-branch: ## Секреты во ВСЕХ коммитах ветки, включая удалённые позже: [BASE=origin/main]
 	@mkdir -p reports
 	python3 scripts/secret_scan.py --since $(BASE) --report reports/secrets-branch.json
