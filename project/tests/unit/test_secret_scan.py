@@ -35,6 +35,14 @@ def test_substitutions_and_placeholders_pass() -> None:
     assert findings_for("app/x.py", 'token = "CHANGE_ME_please"') == []
 
 
+def test_team_history_samples_are_placeholders() -> None:
+    # из прошлых этапов в истории: образец .env.example и ключ службы тестов
+    assert findings_for(".env.example", "JWT_SECRET=CHANGE_СВОЙ_КЛЮЧ") == []
+    test_key = "тестовый-ключ-" + "подписи-достаточной-длины-1234567890"
+    assert findings_for("docker-compose.yml", f"      JWT_SECRET: {test_key}") == []
+    assert findings_for("docker-compose.yml", f"      JWT_SECRET: {VALUE}")
+
+
 def test_word_ending_with_keyword_is_not_a_name() -> None:
     # «compassword» — не имя настройки с приставкой, а просто слово
     assert findings_for("app/x.py", f'compassword = "{VALUE}"') == []
@@ -104,7 +112,45 @@ def test_allowed_files_are_skipped_in_history_too() -> None:
     assert not any("docs/testing.md" in f for f in findings)
 
 
+def test_history_mode_reads_all_refs_from_the_first_commit() -> None:
+    whole = secret_scan.log_args("--all")
+    branch = secret_scan.log_args("abc123..HEAD")
+
+    assert "--all" in whole and not any(".." in arg for arg in whole)
+    assert whole[-2:] == ["--", ":/"]  # весь репозиторий, а не только project/
+    assert "abc123..HEAD" in branch and "--all" not in branch
+
+
 def test_clean_log_has_no_findings() -> None:
     findings, _ = secret_scan.scan_log("\0commit 3333\n+++ b/app/x.py\n@@ -1 +1 @@\n+x = 1\n")
 
     assert findings == []
+
+
+def test_name_with_key_suffix_is_found() -> None:
+    assert findings_for("app/settings.py", f'SECRET_KEY = "{VALUE}"')
+    assert findings_for("app/settings.py", f'jwt_secret_key = "{VALUE}"')
+
+
+def test_unquoted_values_in_config_files_are_found() -> None:
+    unquoted = VALUE.replace("!", "")
+
+    assert findings_for("deploy/x.sh", f"export DB_PASSWORD={unquoted}")
+    assert findings_for("../.github/workflows/ci.yml", f"password: {unquoted}")
+    # в коде Python без кавычек — это имя переменной, не значение
+    assert findings_for("app/x.py", f"password = {unquoted}") == []
+
+
+def test_unquoted_substitutions_and_expressions_pass() -> None:
+    assert findings_for("../.github/workflows/ci.yml", "PASSWORD: ${{ secrets.X }}") == []
+    assert findings_for("scripts/setup.sh", "secret = sys.argv[1]") == []
+    assert findings_for("x.yml", "token: config.token") == []
+    assert findings_for(".env.example", "ADMIN_PASSWORD=CHANGE_ME") == []
+
+
+def test_repository_root_paths_are_mapped() -> None:
+    assert secret_scan.to_project("project/app/x.py", "project/") == "app/x.py"
+    assert secret_scan.to_project(".github/workflows/ci.yml", "project/") == (
+        "../.github/workflows/ci.yml"
+    )
+    assert secret_scan.to_project("app/x.py", "") == "app/x.py"

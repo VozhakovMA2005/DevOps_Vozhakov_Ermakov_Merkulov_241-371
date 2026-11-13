@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess  # nosec B404  # опрос git: служебный сценарий проверок
@@ -123,7 +124,13 @@ PLACEHOLDERS = (
     "placeholder",
     "ваш-",
     "демо_пароль",
+    # образцы в инструкциях команды: «пароль-для-sudo-2026», «пароль-миграций-2026»
+    "пароль",
     "демо-пароль",
+    # история команды (make secrets-history): «CHANGE_СВОЙ_КЛЮЧ» в образце
+    # .env.example и ключ службы тестов «тестовый-ключ-подписи-…» в compose
+    "свой_ключ",
+    "тестовый-ключ",
     "xxx",
     "***",
 )
@@ -151,10 +158,45 @@ ASSIGNMENT = re.compile(
         (?:[a-z0-9]+[_-])*
         (?: password | passwd | pwd | secret | token | api[_-]?key
           | private[_-]?key | access[_-]?key | jwt[_-]?secret )
+        (?:[_-](?:key|value|string))?
     )
     \s* [:=] \s*
     ["']([^"'\n]{6,})["']
     """
+)
+
+#: Значение без кавычек — в сценариях оболочки, файлах окружения, YAML и
+#: настройках: «export DB_PASSWORD=…», «password: …». Имя — как в ASSIGNMENT
+UNQUOTED = re.compile(
+    r"""(?ix)
+    ^\s*(?:export\s+|-\s+)?
+    (
+        (?:[a-z0-9]+[_-])*
+        (?: password | passwd | pwd | secret | token | api[_-]?key
+          | private[_-]?key | access[_-]?key | jwt[_-]?secret )
+        (?:[_-](?:key|value|string))?
+    )
+    \s* [:=] \s*
+    ([^\s"'#]{6,})
+    \s*(?:\#.*)?$
+    """
+)
+
+#: Значение без кавычек, похожее на выражение: вызов, индекс, обращение к полю
+CODE_LIKE = re.compile(r"[()\[\]{}]|^[A-Za-z_][\w]*(?:\.[A-Za-z_]\w*)+$")
+
+#: Файлы, где значения обычно пишут без кавычек
+UNQUOTED_SUFFIXES = (
+    ".sh",
+    ".env",
+    ".example",
+    ".yml",
+    ".yaml",
+    ".conf",
+    ".ini",
+    ".cfg",
+    ".service",
+    ".properties",
 )
 
 #: Форматы, которые опознаются сами по себе. Третье поле — допустимо ли это в
@@ -256,7 +298,7 @@ def git_tracked_files() -> list[Path] | None:
 
     try:
         result = subprocess.run(  # nosec B603  # argv фиксирован, данных извне нет
-            [git, "ls-files", "-z"],
+            [git, "ls-files", "-z", ":/"],
             cwd=ROOT,
             capture_output=True,
             check=False,
@@ -274,6 +316,11 @@ def git_tracked_files() -> list[Path] | None:
         if path.is_file() and not (set(Path(name).parts) & SKIP_DIRS):
             files.append(path)
     return files
+
+
+def shown_path(path: Path) -> str:
+    """Путь относительно проекта; файлы корня репозитория — через «../»."""
+    return Path(os.path.relpath(path, ROOT)).as_posix()
 
 
 def is_placeholder(value: str) -> bool:
@@ -326,6 +373,12 @@ def check_line(
         )
 
     match = ASSIGNMENT.search(line)
+    if match is None and relative.endswith(UNQUOTED_SUFFIXES):
+        match = UNQUOTED.search(line)
+        # «secret = sys.argv[1]» во встроенном Python, «token: config.token» —
+        # выражение, а не значение
+        if match is not None and CODE_LIKE.search(match.group(2)):
+            match = None
     if match is None or is_sample:
         return
     name, value = match.group(1), match.group(2)
@@ -352,7 +405,7 @@ def skipped(relative: str) -> bool:
 def scan() -> list[str]:
     findings: list[str] = []
     for path in iter_files():
-        relative = path.relative_to(ROOT).as_posix()
+        relative = shown_path(path)
         check_names(path, relative, findings)
         if skipped(relative):
             continue
@@ -407,11 +460,19 @@ def parse_log(text: str) -> list[tuple[str, str, int, str]]:
     return added
 
 
-def scan_log(text: str) -> tuple[list[str], int]:
+def to_project(path: str, prefix: str) -> str:
+    """Путь от корня репозитория -> путь относительно проекта («../» снаружи)."""
+    if not prefix:
+        return path
+    return path[len(prefix) :] if path.startswith(prefix) else f"../{path}"
+
+
+def scan_log(text: str, prefix: str = "") -> tuple[list[str], int]:
     """Находки в добавленных строках и число просмотренных коммитов."""
     findings: list[str] = []
     commits = set()
-    for commit, relative, number, line in parse_log(text):
+    for commit, path, number, line in parse_log(text):
+        relative = to_project(path, prefix)
         commits.add(commit)
         where = f"коммит {commit[:10]}: "
         if number == 0:
@@ -432,6 +493,42 @@ def git(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def log_args(*revs: str) -> list[str]:
+    """Аргументы git log -p для набора коммитов: диапазон ветки или --all."""
+    return [
+        "log",
+        "--no-merges",
+        "--no-color",
+        "--no-ext-diff",
+        "--unified=0",
+        "--diff-filter=AMR",
+        "--format=%x00commit %H",
+        "-p",
+        *revs,
+        "--",
+        ":/",
+    ]
+
+
+def scan_revs(*revs: str) -> tuple[list[str], int] | str:
+    """Добавленные строки всех коммитов набора revs. Строка — текст ошибки."""
+    log = git(*log_args(*revs))
+    if log.returncode != 0:
+        return f"git log завершился с ошибкой: {log.stderr.strip()}"
+    prefix = git("rev-parse", "--show-prefix").stdout.strip()
+    findings, _ = scan_log(log.stdout, prefix)
+    count = git("rev-list", "--count", "--no-merges", *revs)
+    return findings, int(count.stdout.strip() or 0)
+
+
+def scan_history() -> tuple[list[str], int] | str:
+    """Вся история: все коммиты всех веток и тегов, начиная с первого."""
+    try:
+        return scan_revs("--all")
+    except FileNotFoundError:
+        return "нужен git: проверка смотрит историю коммитов"
+
+
 def scan_since(base: str) -> tuple[list[str], int] | str:
     """Все коммиты от общего предка с base до HEAD. Строка — текст ошибки."""
     try:
@@ -443,25 +540,7 @@ def scan_since(base: str) -> tuple[list[str], int] | str:
             f"не найден общий предок с {base}: {merge_base.stderr.strip()}. "
             "Получите основную ветку: git fetch origin main"
         )
-    log = git(
-        "log",
-        "--no-merges",
-        "--no-color",
-        "--no-ext-diff",
-        "--relative",
-        "--unified=0",
-        "--diff-filter=AMR",
-        "--format=%x00commit %H",
-        "-p",
-        f"{merge_base.stdout.strip()}..HEAD",
-        "--",
-        ".",
-    )
-    if log.returncode != 0:
-        return f"git log завершился с ошибкой: {log.stderr.strip()}"
-    findings, _ = scan_log(log.stdout)
-    count = git("rev-list", "--count", "--no-merges", f"{merge_base.stdout.strip()}..HEAD")
-    return findings, int(count.stdout.strip() or 0)
+    return scan_revs(f"{merge_base.stdout.strip()}..HEAD")
 
 
 def write_report(path: Path, mode: str, checked: int, findings: list[str]) -> None:
@@ -484,10 +563,22 @@ def main() -> int:
         metavar="REF",
         help="проверить добавленные строки всех коммитов ветки от общего предка с REF",
     )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="проверить всю историю: все коммиты всех веток и тегов",
+    )
     parser.add_argument("--report", type=Path, help="записать находки в файл JSON")
     args = parser.parse_args()
 
-    if args.since:
+    if args.all:
+        result = scan_history()
+        if isinstance(result, str):
+            print(f"Проверка истории не выполнена: {result}", file=sys.stderr)
+            return 2
+        findings, checked = result
+        mode, what = "вся история", f"коммитов в истории — {checked}"
+    elif args.since:
         result = scan_since(args.since)
         if isinstance(result, str):
             print(f"Проверка коммитов не выполнена: {result}", file=sys.stderr)
@@ -514,7 +605,15 @@ def main() -> int:
         print(f"Найдено нарушений: {len(findings)}", file=sys.stderr)
         for finding in findings:
             print(f"  {finding}", file=sys.stderr)
-        if args.since:
+        if args.all:
+            print(
+                "\nСекрет в истории виден всем, у кого есть доступ к репозиторию, "
+                "в том числе после открытия репозитория. Значение считается раскрытым: "
+                "смените его (пароль, ключ, токен) там, где оно действует. Историю "
+                "main не переписывают.",
+                file=sys.stderr,
+            )
+        elif args.since:
             print(
                 "\nСекрет в истории остаётся и после удаления из файла: любой, у кого "
                 "есть клон, найдёт его в git log. Значение считается раскрытым — его "
