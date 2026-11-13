@@ -76,7 +76,7 @@ endif
         docker-env build preflight up down logs ps shell container-check persist-drill \
         shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch secrets-history guard ci checks-image \
         push publish registry-up registry-down registry-ls \
-        test-unit test-int schema-check secrets-scan build-app ci-sync codeowners-check
+        test-unit test-int schema-check secrets-scan build-app ci-sync codeowners-check print-app-image
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -357,6 +357,9 @@ publish: ## Конвейер целиком и публикация, тольк�
 	@test -n "$(REGISTRY)" || (echo "Укажите реестр: make publish REGISTRY=localhost:5000" && exit 1)
 	@$(MAKE) --no-print-directory ci
 	@$(MAKE) --no-print-directory push
+
+print-app-image: ## Имя образа приложения (для сценариев CI)
+	@echo "$(APP_IMAGE)"
 
 registry-up: ## Локальный реестр образов на 127.0.0.1:5000 («локальный docker hub»)
 	@bash scripts/registry.sh up
