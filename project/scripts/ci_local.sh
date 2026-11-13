@@ -5,8 +5,7 @@
 # вызывает те же цели make, по одной на стадию. Поэтому «у меня проходит, а
 # на сервере нет» означает разницу окружения, а не разницу проверок.
 #
-# Порядок стадий: стиль → безопасность → тесты → миграции → резервное
-# копирование → сборка → контейнерная проверка → анализ образа. Первая
+# Порядок стадий — как в ТЗ 7.1 и в .github/workflows/ci.yml. Первая
 # упавшая стадия останавливает конвейер: дальше не идёт ни сборка, ни
 # публикация.
 #
@@ -31,24 +30,26 @@ rm -f "$MARKER"
 SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 MODE="$("$MAKE_CMD" --no-print-directory -s mode 2>/dev/null || echo "?")"
 
-# Стадия: «название|цели make через пробел»
+# Стадия: «название|цели make через пробел». Названия и порядок — как в
+# ТЗ 7.1 (lint → types → sast → test → test-int → migrate-check →
+# schema-check → secrets-scan → deps-check) и в .github/workflows/ci.yml,
+# затем защита проверок, резервное копирование, сборка и анализ образа
 STAGES=(
-    "Стиль и типы|quality types"
-    "Безопасность: код, секреты, исключения|sast secrets secrets-branch waivers guard"
-    "Безопасность: зависимости|deps-check"
-    "Тесты и покрытие (отдельная тестовая база)|test-report"
-    "Миграции|migrate-check"
-    "Резервное копирование и восстановление|restore-drill"
-    "Сборка образов|build"
-    "Контейнерная проверка|container-check"
-    "Анализ образа|image-scan"
+    "lint — стиль|quality"
+    "types — типы|types"
+    "sast — анализ кода на безопасность|sast"
+    "test — модульные тесты|test-unit"
+    "test-int — интеграционные тесты на PostgreSQL, покрытие|test-int"
+    "migrate-check — обратимость миграций|migrate-check"
+    "schema-check — схема совпадает с моделями|schema-check"
+    "secrets-scan — секреты в дереве и коммитах ветки|secrets-scan"
+    "deps-check — уязвимости зависимостей|deps-check"
+    "guard — защита проверок и критических файлов|waivers guard"
+    "backup — резервное копирование и восстановление|restore-drill"
+    "build — сборка образа|build-app"
+    "container-check — структура образа и окружения|container-check"
+    "image-scan — уязвимости образа|image-scan"
 )
-
-# В контейнерном режиме проверки идут в образе проверок: собрать его до
-# первой стадии, иначе первая же стадия собирала бы его внутри себя
-case "$MODE" in
-    *"в контейнерах"*) STAGES=("Образ проверок|checks-image" "${STAGES[@]}") ;;
-esac
 
 {
     echo "# Конвейер проверок"

@@ -160,6 +160,10 @@ make guard      # с этапа 5: ветка не ослабляет прове
 | `make test` | тесты в контейнере |
 | `make test-cov` | тесты с отчётом о покрытии в консоль |
 | `make test-report` | тесты с отчётами `reports/junit.xml`, `coverage.xml`, `htmlcov/` |
+| `make test-unit` / `make test-int` | модульные тесты без базы / интеграционные на PostgreSQL с порогами покрытия — стадии `test` и `test-int` ТЗ 7.1 |
+| `make schema-check` | схема после наката совпадает с моделями — стадия `schema-check` |
+| `make secrets-scan` | `secrets` и `secrets-branch` — стадия `secrets-scan` |
+| `make build-app` | собрать только образ приложения — стадия `build` |
 | `make coverage-services` | отдельный порог покрытия сервисного слоя — 80% |
 | `make mutants` | мутационная проверка правил |
 | `make quality` | линтер и форматирование |
@@ -238,10 +242,9 @@ make container-check
 make ci
 ```
 
-Те же стадии и в том же порядке, что выполняет сервер CI: стиль и типы →
-безопасность (код, секреты в дереве и в коммитах ветки, исключения, защита
-файлов приёмки, зависимости) → тесты с обоими порогами покрытия → миграции →
-резервное копирование → сборка → контейнерная проверка → анализ образа.
+Те же стадии и в том же порядке, что выполняет сервер CI: lint → types →
+sast → test → test-int → migrate-check → schema-check → secrets-scan →
+deps-check (ТЗ 7.1), затем guard, backup, build, container-check, image-scan.
 Первая упавшая стадия останавливает конвейер. Сводка — `reports/ci-summary.md`,
 отчёты стадий — в `reports/`. Подробно — `docs/ci.md`.
 
