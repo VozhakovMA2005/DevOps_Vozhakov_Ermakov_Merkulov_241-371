@@ -11,10 +11,13 @@
 #   2. отметка reports/ci-passed записана make ci для этого же коммита —
 #      все стадии пройдены; упавший конвейер отметку не оставляет;
 #   3. образ собран из этого коммита — метка org.opencontainers.image.revision
-#      совпадает с SHA.
+#      совпадает с SHA;
+#   4. коммит влит в main — публикуется только то, что прошло ревью и
+#      слияние; тег выпуска на коммите из непроверенной ветки не поможет.
 #
 # Теги: sha-<полный SHA коммита> всегда; <версия> — только если на коммите стоит
-# аннотированный тег выпуска vX.Y.Z. Тег latest не ставится никогда (ТЗ 7.2).
+# аннотированный тег выпуска строго вида vX.Y.Z. Тег latest не ставится
+# никогда (ТЗ 7.2).
 #
 # Учётные данные реестра сюда не передаются: вход выполняется заранее
 # (docker login), на сервере CI — из защищённых переменных.
@@ -51,6 +54,12 @@ passed="$(head -1 "$MARKER")"
 [ "$passed" = "$SHA" ] || die "Отметка $MARKER — для коммита $passed, а не $SHA. Публикация запрещена — make ci для текущего коммита"
 ok "конвейер пройден для этого коммита ($MARKER)"
 
+git rev-parse --verify -q origin/main >/dev/null \
+    || die "Нет origin/main: git fetch origin main"
+git merge-base --is-ancestor "$SHA" origin/main \
+    || die "Коммит $SHA не влит в main. Публикуется только то, что прошло ревью и слияние"
+ok "коммит влит в main"
+
 docker image inspect "$APP_IMAGE" >/dev/null 2>&1 || die "Нет образа $APP_IMAGE: make build"
 revision="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$APP_IMAGE")"
 case "$revision" in
@@ -62,7 +71,12 @@ fi
 ok "образ собран из этого коммита (метка revision: $revision)"
 
 TAGS=("sha-$SHA")
-release="$(git describe --exact-match --tags --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)"
+# Без --tags: только аннотированные теги (ТЗ 7.3). Строго vX.Y.Z — тег
+# «v0.5.1-demo» тега версии образу не даёт
+release="$(git describe --exact-match --match 'v[0-9]*.[0-9]*.[0-9]*' HEAD 2>/dev/null || true)"
+if ! printf '%s' "$release" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    release=""
+fi
 if [ -n "$release" ]; then
     TAGS+=("${release#v}")
     ok "на коммите тег выпуска $release — образ получит и тег версии ${release#v}"
