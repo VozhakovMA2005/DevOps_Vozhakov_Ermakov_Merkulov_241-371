@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess  # nosec B404  # опрос git: служебный сценарий проверок
@@ -141,11 +142,15 @@ SAFE_VALUE_MARKERS = (
 
 #: Подозрительные присваивания. Ищем именно «ключ = значение в кавычках»:
 #: ровно так секрет и попадает в репозиторий
+#: Имя может нести приставку: DB_PASSWORD, SMTP_PASSWORD, github_token. Граница
+#: слова \b после подчёркивания не срабатывает, поэтому приставка описана явно
 ASSIGNMENT = re.compile(
     r"""(?ix)
-    \b(
-        password | passwd | pwd | secret | token | api[_-]?key
-        | private[_-]?key | access[_-]?key | jwt[_-]?secret
+    (?<![a-z0-9])
+    (
+        (?:[a-z0-9]+[_-])*
+        (?: password | passwd | pwd | secret | token | api[_-]?key
+          | private[_-]?key | access[_-]?key | jwt[_-]?secret )
     )
     \s* [:=] \s*
     ["']([^"'\n]{6,})["']
@@ -288,43 +293,60 @@ def check_names(path: Path, relative: str, findings: list[str]) -> None:
 
 
 def check_content(relative: str, text: str, findings: list[str]) -> None:
+    for number, line in enumerate(text.splitlines(), 1):
+        check_line(relative, number, line, findings)
+
+
+def check_line(
+    relative: str, number: int, line: str, findings: list[str], where: str = ""
+) -> None:
+    """Проверить одну строку файла. where — приставка к находке (коммит)."""
     is_example = relative.endswith(EXAMPLE_FILES)
     is_sample = relative.startswith(SAMPLE_PREFIXES)
+    place = f"{where}{relative}:{number}"
 
-    for number, line in enumerate(text.splitlines(), 1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return
 
-        for label, pattern, allowed_in_samples in HARD:
-            if pattern.search(line) and not (is_sample and allowed_in_samples):
-                findings.append(f"{relative}:{number}: {label}")
+    for label, pattern, allowed_in_samples in HARD:
+        if pattern.search(line) and not (is_sample and allowed_in_samples):
+            findings.append(f"{place}: {label}")
 
-        dsn = DSN_WITH_PASSWORD.search(line)
-        if (
-            dsn is not None
-            and not is_sample
-            and not looks_substituted(line)
-            and not is_placeholder(dsn.group(1))
-        ):
-            findings.append(
-                f"{relative}:{number}: в строке подключения записан пароль"
-                + (", ожидается заглушка" if is_example else "")
-            )
+    dsn = DSN_WITH_PASSWORD.search(line)
+    if (
+        dsn is not None
+        and not is_sample
+        and not looks_substituted(line)
+        and not is_placeholder(dsn.group(1))
+    ):
+        findings.append(
+            f"{place}: в строке подключения записан пароль"
+            + (", ожидается заглушка" if is_example else "")
+        )
 
-        match = ASSIGNMENT.search(line)
-        if match is None or is_sample:
-            continue
-        name, value = match.group(1), match.group(2)
-        if looks_substituted(line) or is_placeholder(value):
-            continue
-        if is_example:
-            findings.append(
-                f"{relative}:{number}: в файле-образце настоящее значение «{name}», "
-                "ожидается заглушка"
-            )
-        else:
-            findings.append(f"{relative}:{number}: значение «{name}» записано строкой")
+    match = ASSIGNMENT.search(line)
+    if match is None or is_sample:
+        return
+    name, value = match.group(1), match.group(2)
+    # "$OWNER_PASSWORD" в сценарии оболочки — подстановка переменной, не значение
+    if looks_substituted(line) or is_placeholder(value) or value.startswith("$"):
+        return
+    if is_example:
+        findings.append(
+            f"{place}: в файле-образце настоящее значение «{name}», ожидается заглушка"
+        )
+    else:
+        findings.append(f"{place}: значение «{name}» записано строкой")
+
+
+def skipped(relative: str) -> bool:
+    """Файл, содержимое которого не проверяется: исключение или двоичный."""
+    return (
+        relative in ALLOWED
+        or relative.endswith(tuple(SKIP_SUFFIXES))
+        or bool(set(relative.split("/")) & SKIP_DIRS)
+    )
 
 
 def scan() -> list[str]:
@@ -332,9 +354,7 @@ def scan() -> list[str]:
     for path in iter_files():
         relative = path.relative_to(ROOT).as_posix()
         check_names(path, relative, findings)
-        if relative in ALLOWED:
-            continue
-        if path.name.endswith(tuple(SKIP_SUFFIXES)):
+        if skipped(relative):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -344,17 +364,148 @@ def scan() -> list[str]:
     return findings
 
 
+# --------------------------------------------------------------------------- #
+# Коммиты ветки
+# --------------------------------------------------------------------------- #
+
+#: Граница коммита в выводе git log: нулевые байты в тексте исходников не встречаются
+COMMIT_MARK = "\0commit "
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def parse_log(text: str) -> list[tuple[str, str, int, str]]:
+    """Добавленные строки из вывода git log -p: (коммит, файл, номер строки, текст).
+
+    Для нового файла дополнительно выдаётся запись с номером 0 и пустым текстом:
+    по ней проверяется имя файла (.env, дамп, ключ).
+    """
+    added: list[tuple[str, str, int, str]] = []
+    commit = ""
+    path = ""
+    new_file = False
+    number = 0
+    for line in text.split("\n"):
+        if line.startswith(COMMIT_MARK):
+            commit, path, new_file = line[len(COMMIT_MARK) :].strip(), "", False
+        elif line.startswith("diff --git "):
+            path, new_file = "", False
+        elif line.startswith("new file mode"):
+            new_file = True
+        elif line.startswith("+++ "):
+            target = line[4:]
+            path = target[2:] if target.startswith("b/") else ""
+            if path and new_file:
+                added.append((commit, path, 0, ""))
+        elif line.startswith("@@"):
+            hunk = HUNK.match(line)
+            number = int(hunk.group(1)) if hunk else 0
+        elif line.startswith("+") and path:
+            added.append((commit, path, number, line[1:]))
+            number += 1
+        elif line.startswith(" ") and path:
+            number += 1
+    return added
+
+
+def scan_log(text: str) -> tuple[list[str], int]:
+    """Находки в добавленных строках и число просмотренных коммитов."""
+    findings: list[str] = []
+    commits = set()
+    for commit, relative, number, line in parse_log(text):
+        commits.add(commit)
+        where = f"коммит {commit[:10]}: "
+        if number == 0:
+            check_names(Path(relative), f"{where}{relative}", findings)
+            continue
+        if skipped(relative):
+            continue
+        check_line(relative, number, line, findings, where)
+    return findings, len(commits)
+
+
+def git(*args: str) -> subprocess.CompletedProcess[str]:
+    binary = shutil.which("git")
+    if binary is None:
+        raise FileNotFoundError("git")
+    return subprocess.run(  # nosec B603  # argv собран здесь, данных извне нет
+        [binary, *args], cwd=ROOT, capture_output=True, text=True, check=False
+    )
+
+
+def scan_since(base: str) -> tuple[list[str], int] | str:
+    """Все коммиты от общего предка с base до HEAD. Строка — текст ошибки."""
+    try:
+        merge_base = git("merge-base", base, "HEAD")
+    except FileNotFoundError:
+        return "нужен git: проверка смотрит историю коммитов"
+    if merge_base.returncode != 0:
+        return (
+            f"не найден общий предок с {base}: {merge_base.stderr.strip()}. "
+            "Получите основную ветку: git fetch origin main"
+        )
+    log = git(
+        "log",
+        "--no-merges",
+        "--no-color",
+        "--no-ext-diff",
+        "--relative",
+        "--unified=0",
+        "--diff-filter=AMR",
+        "--format=%x00commit %H",
+        "-p",
+        f"{merge_base.stdout.strip()}..HEAD",
+        "--",
+        ".",
+    )
+    if log.returncode != 0:
+        return f"git log завершился с ошибкой: {log.stderr.strip()}"
+    findings, _ = scan_log(log.stdout)
+    count = git("rev-list", "--count", "--no-merges", f"{merge_base.stdout.strip()}..HEAD")
+    return findings, int(count.stdout.strip() or 0)
+
+
+def write_report(path: Path, mode: str, checked: int, findings: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {"mode": mode, "checked": checked, "findings": findings},
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Поиск секретов в репозитории")
     parser.add_argument("--quiet", action="store_true", help="только код возврата")
+    parser.add_argument(
+        "--since",
+        metavar="REF",
+        help="проверить добавленные строки всех коммитов ветки от общего предка с REF",
+    )
+    parser.add_argument("--report", type=Path, help="записать находки в файл JSON")
     args = parser.parse_args()
 
-    findings = scan()
-    checked = len(iter_files())
+    if args.since:
+        result = scan_since(args.since)
+        if isinstance(result, str):
+            print(f"Проверка коммитов не выполнена: {result}", file=sys.stderr)
+            return 2
+        findings, checked = result
+        mode, what = f"коммиты после {args.since}", f"коммитов в ветке — {checked}"
+    else:
+        findings = scan()
+        checked = len(iter_files())
+        mode, what = "дерево", f"файлов в репозитории — {checked}"
+
+    if args.report:
+        write_report(args.report, mode, checked, findings)
+
     if not findings:
         if not args.quiet:
             print(
-                f"Секретов не найдено: проверено файлов в репозитории — {checked}, "
+                f"Секретов не найдено: проверено {what}, "
                 "запрещённых файлов и записанных строкой значений нет"
             )
         return 0
@@ -363,6 +514,13 @@ def main() -> int:
         print(f"Найдено нарушений: {len(findings)}", file=sys.stderr)
         for finding in findings:
             print(f"  {finding}", file=sys.stderr)
+        if args.since:
+            print(
+                "\nСекрет в истории остаётся и после удаления из файла: любой, у кого "
+                "есть клон, найдёт его в git log. Значение считается раскрытым — его "
+                "надо сменить, а коммит переписать до слияния (ветка ещё не в main).",
+                file=sys.stderr,
+            )
         print(
             "\nЗапрет — ТЗ 7.2. Уберите значение в переменную окружения; "
             "исключение добавляется правкой scripts/secret_scan.py с обоснованием "

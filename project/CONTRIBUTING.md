@@ -166,8 +166,10 @@ make verify
 | `make sast` | статический анализ на безопасность |
 | `make secrets` | поиск секретов и запрещённых файлов |
 | `make waivers` | запрет исключений без обоснования |
+| `make secrets-branch` | секреты во всех коммитах ветки относительно `BASE` (по умолчанию `origin/main`), включая удалённые позже |
 | `make deps-check` | зависимости из lock-файлов — на известные уязвимости (`pip-audit`, нужен pypi.org) |
 | `make container-check` | проверка контейнерного окружения (раздел 3.4) |
+| `make image-scan` | анализ образа приложения на уязвимости (Trivy), исключения — `.trivyignore.yaml` |
 | `make backup` / `make restore FILE=…` | резервная копия и восстановление; в контейнерах — средствами контейнера базы |
 | `make backup-local` / `make restore-local FILE=…` | то же без контейнеров, на стенде |
 | `make restore-drill` | учения: копия, порча данных, восстановление |
@@ -328,7 +330,7 @@ import subprocess  # nosec B404  # запуск pytest: это служебны�
 ```
 tests/**            Makefile          pyproject.toml
 docker/**           docker-compose.yml .dockerignore
-requirements*.lock  scripts/container_check.py
+requirements*.lock  scripts/container_check.py  .trivyignore.yaml
 deploy/**           .github/workflows/**   (с этапа 5)
 ```
 
