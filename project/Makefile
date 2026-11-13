@@ -22,6 +22,8 @@ export GIT_COMMIT
 # новый идентификатор образа даже без единого изменения, и make up зря
 # пересоздаёт контейнеры приложения. Без них тот же вход даёт тот же образ
 export BUILDX_NO_DEFAULT_ATTESTATIONS := 1
+# С чем сравнивается ветка: проверки истории и защиты файлов приёмки (ЛР5)
+BASE ?= origin/main
 
 DOCKER_READY := $(shell docker info >/dev/null 2>&1 && test -f .env.docker && echo 1 || echo 0)
 LOCAL ?= $(if $(filter 1,$(DOCKER_READY)),0,1)
@@ -66,7 +68,7 @@ endif
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
-        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan
+        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -219,8 +221,19 @@ sast: ## Статический анализ на безопасность (ТЗ
 	$(RUN) sh -c "bandit -q -c pyproject.toml -r app scripts \
 	  -f json -o reports/bandit.json; bandit -q -c pyproject.toml -r app scripts"
 
+# Поиск идёт по файлам РЕПОЗИТОРИЯ (git ls-files) на машине, в любом режиме.
+# В образе проверок лежит копия дерева на момент сборки: новый файл с
+# секретом туда не попадёт, пока образ не пересобран, и проверка его не
+# увидела бы. Сценарий — только стандартная библиотека, окружение не нужно
 secrets: ## Поиск секретов и запрещённых файлов в репозитории (ТЗ 7.2)
-	$(RUN) python scripts/secret_scan.py
+	@mkdir -p reports
+	python3 scripts/secret_scan.py --report reports/secrets.json
+
+# Коммиты ветки смотрятся на машине, а не в контейнере: нужен git и история,
+# а в образ проверок .git не попадает. Сценарий — только стандартная библиотека
+secrets-branch: ## Секреты во ВСЕХ коммитах ветки, включая удалённые позже: [BASE=origin/main]
+	@mkdir -p reports
+	python3 scripts/secret_scan.py --since $(BASE) --report reports/secrets-branch.json
 
 waivers: ## Запрет исключений без обоснования и снижения порогов (пункт 14)
 	$(RUN) python scripts/waiver_check.py
