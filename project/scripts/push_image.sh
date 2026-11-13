@@ -20,7 +20,7 @@
 # (docker login), на сервере CI — из защищённых переменных.
 
 . "$(dirname "$0")/lib.sh"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 
 APP_IMAGE="${APP_IMAGE:-audfond:0.4.0}"
 IMAGE_NAME="${IMAGE_NAME:-audfond}"
