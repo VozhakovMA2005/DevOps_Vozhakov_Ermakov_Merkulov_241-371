@@ -367,9 +367,8 @@ tests/**                 Makefile                pyproject.toml
 docker/**                docker-compose.yml      .dockerignore
 requirements*.txt        requirements*.lock      .trivyignore.yaml
 deploy/**                migrations/env.py       CONTRIBUTING.md
-scripts/acceptance_guard.py   scripts/secret_scan.py   scripts/waiver_check.py
-scripts/container_check.py    scripts/deps_check.py    scripts/image_scan.py
-scripts/mutation_check.py     scripts/ci_local.sh      scripts/push_image.sh
+scripts/**   (все сценарии: через них запускаются сами проверки)
+*.toml  *.ini  *.cfg  .coveragerc  conftest.py   (настройки инструментов)
 настройки CI и правила согласования в корне репозитория
 ```
 
@@ -395,11 +394,18 @@ scripts/mutation_check.py     scripts/ci_local.sh      scripts/push_image.sh
 | добавлен пропуск | `@pytest.mark.skip`, `skipif`, `xfail`, `pytest.skip()` — даже с причиной |
 | из `make verify` убран шаг | `verify: quality types …` без `secrets` |
 | в команде проверки подавлена ошибка | `|| true`, `--exit-zero`, `-k`, `--deselect`, `--no-cov`, ведущий `-` |
+| из команды проверки или её переменной убрана часть | рецепт `quality` заменён на `echo`, `--fail-under=80` → `--fail-under=0`, `RUN := true` |
+| появился файл настроек инструмента | `ruff.toml`, `mypy.ini`, `pytest.ini`, `.coveragerc`, `conftest.py` — их читают раньше `pyproject.toml` |
+| изменён сценарий запуска проверок | `scripts/run.sh`, `lib.sh`, `migrate_drill.sh`, `restore_drill.sh`, `ci_local.sh` |
+| тест стал заведомо истинным | `assert True or …` проверкой не считается |
 | ослаблены настройки анализаторов | правило ruff убрано или в `ignore`, выключена опция mypy, расширены исключения bandit и покрытия, снижен порог |
 | добавлено исключение в сценарий проверки | `ALLOWED` в `secret_scan.py` и `deps_check.py`, запись в `.trivyignore.yaml`, меньше проверок в `container_check.py` |
 
-Сценарий запускается **в той редакции, что уже лежит в `main`**, а не в
-проверяемой ветке: правка самой проверки не может ослабить её в том же запросе.
+Локально `make guard` берёт сценарий из `main`, но Makefile — из ветки. На
+GitHub та же проверка идёт workflow **guard-main**, который GitHub берёт из
+`main` (`pull_request_target`): и сценарий, и Makefile-правила, по которым
+он судит, — из `main`, файлы запроса только читаются. Это обязательная
+проверка правила защиты `main`.
 
 Если ослабление действительно нужно (тест дублирует другой, правило линтера
 противоречит форматтеру), в сообщение коммита добавляется строка:

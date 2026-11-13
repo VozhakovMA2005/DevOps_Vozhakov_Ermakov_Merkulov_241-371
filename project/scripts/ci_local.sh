@@ -72,7 +72,8 @@ for stage in "${STAGES[@]}"; do
         "$number" "${#STAGES[@]}" "$title" "$targets"
     started=$SECONDS
     # shellcheck disable=SC2086  # цели make — отдельные слова
-    "$MAKE_CMD" --no-print-directory $targets
+    # -k: цели стадии выполняются все, даже если одна упала — видны все находки
+    "$MAKE_CMD" --no-print-directory -k $targets
     code=$?
     spent=$((SECONDS - started))
     if [ "$code" -eq 0 ]; then

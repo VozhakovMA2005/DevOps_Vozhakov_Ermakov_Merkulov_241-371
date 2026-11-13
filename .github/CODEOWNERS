@@ -6,6 +6,7 @@
 # может, поэтому у каждого пути не меньше двух ответственных — одобряет тот,
 # кто не автор.
 #
+# Порядок важен: из правил, подошедших к файлу, действует последнее.
 # Список путей совпадает с CRITICAL в project/scripts/acceptance_guard.py:
 # make codeowners-check (стадия guard) проверяет, что каждый критический файл
 # репозитория здесь закреплён.
@@ -16,36 +17,48 @@
 #   LOGIN_VOZHAKOV  Вожаков М. А.   аутентификация, безопасность, секреты, зависимости
 
 # Конвейер CI и правила согласования
-/.github/                                   @MikhailErm @GrigoryMerkulov
+/.github/                                   @LOGIN_ERMAKOV @LOGIN_MERKULOV
 
 # Единый командный интерфейс и настройки анализаторов
-/project/Makefile                           @GrigoryMerkulov @MikhailErm
-/project/pyproject.toml                     @GrigoryMerkulov @MikhailErm
-/project/CONTRIBUTING.md                    @GrigoryMerkulov @MikhailErm @VozhakovMA2005
+/project/Makefile                           @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/pyproject.toml                     @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/CONTRIBUTING.md                    @LOGIN_MERKULOV @LOGIN_ERMAKOV @LOGIN_VOZHAKOV
 
 # Тесты
-/project/tests/                             @MikhailErm @VozhakovMA2005 @GrigoryMerkulov
+/project/tests/                             @LOGIN_ERMAKOV @LOGIN_VOZHAKOV @LOGIN_MERKULOV
 
 # Контейнеры, зависимости, развёртывание, миграции
-/project/docker/                            @GrigoryMerkulov @VozhakovMA2005
-/project/docker-compose.yml                 @GrigoryMerkulov @VozhakovMA2005
-/project/.dockerignore                      @GrigoryMerkulov @VozhakovMA2005
-/project/requirements*.txt                  @VozhakovMA2005 @GrigoryMerkulov
-/project/requirements*.lock                 @VozhakovMA2005 @GrigoryMerkulov
-/project/.trivyignore.yaml                  @VozhakovMA2005 @GrigoryMerkulov
-/project/deploy/                            @GrigoryMerkulov @VozhakovMA2005
-/project/migrations/env.py                  @GrigoryMerkulov @MikhailErm
+/project/docker/                            @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/docker-compose.yml                 @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/.dockerignore                      @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/requirements*.txt                  @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+/project/requirements*.lock                 @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+/project/.trivyignore.yaml                  @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+/project/deploy/                            @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/migrations/env.py                  @LOGIN_MERKULOV @LOGIN_ERMAKOV
+
+# Настройки инструментов проверок: ruff, mypy, pytest и coverage читают эти
+# файлы раньше pyproject.toml, а conftest.py подключается к любому прогону
+/project/*.toml                             @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/*.ini                              @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/*.cfg                              @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/.coveragerc                        @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/conftest.py                        @LOGIN_ERMAKOV @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+
+# Сценарии: через них запускаются сами проверки (run.sh, lib.sh, учения),
+# поэтому критичен весь каталог. Частные правила ниже уточняют ответственных
+/project/scripts/                           @LOGIN_ERMAKOV @LOGIN_MERKULOV @LOGIN_VOZHAKOV
 
 # Сценарии проверок
-/project/scripts/acceptance_guard.py        @MikhailErm @GrigoryMerkulov
-/project/scripts/ci_sync_check.py           @MikhailErm @GrigoryMerkulov
-/project/scripts/ci_local.sh                @MikhailErm @GrigoryMerkulov
-/project/scripts/ci_base.sh                 @MikhailErm @GrigoryMerkulov
-/project/scripts/codeowners_check.py        @VozhakovMA2005 @MikhailErm
-/project/scripts/waiver_check.py            @MikhailErm @VozhakovMA2005
-/project/scripts/mutation_check.py          @MikhailErm @VozhakovMA2005
-/project/scripts/secret_scan.py             @VozhakovMA2005 @MikhailErm
-/project/scripts/deps_check.py              @VozhakovMA2005 @MikhailErm
-/project/scripts/image_scan.py              @GrigoryMerkulov @VozhakovMA2005
-/project/scripts/container_check.py         @GrigoryMerkulov @VozhakovMA2005
-/project/scripts/push_image.sh              @GrigoryMerkulov @VozhakovMA2005
+/project/scripts/acceptance_guard.py        @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/ci_sync_check.py           @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/ci_local.sh                @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/ci_base.sh                 @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/codeowners_check.py        @LOGIN_VOZHAKOV @LOGIN_ERMAKOV
+/project/scripts/waiver_check.py            @LOGIN_ERMAKOV @LOGIN_VOZHAKOV
+/project/scripts/mutation_check.py          @LOGIN_ERMAKOV @LOGIN_VOZHAKOV
+/project/scripts/secret_scan.py             @LOGIN_VOZHAKOV @LOGIN_ERMAKOV
+/project/scripts/deps_check.py              @LOGIN_VOZHAKOV @LOGIN_ERMAKOV
+/project/scripts/image_scan.py              @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/scripts/container_check.py         @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/scripts/push_image.sh              @LOGIN_MERKULOV @LOGIN_VOZHAKOV

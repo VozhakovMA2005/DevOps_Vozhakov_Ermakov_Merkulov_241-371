@@ -26,14 +26,13 @@ scripts/ci_local.sh и проверяет:
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT.parent / ".github" / "workflows" / "ci.yml"
-CI_LOCAL = ROOT / "scripts" / "ci_local.sh"
 
 #: Порядок проверок из ТЗ 7.1
 TZ_ORDER = (
@@ -51,7 +50,13 @@ TZ_ORDER = (
 SERVICE_JOBS = {"config", "ci-gate", "publish", "publish-local"}
 #: Вспомогательные цели make: готовят окружение, а не проверяют
 HELPER_TARGETS = {"docker-env", "push"}
-ALLOWED_ACTION = re.compile(r"^(actions/[\w.-]+@v\d+|\./\.github/actions/[\w./-]+)$")
+#: Действия GitHub с закреплённой основной версией или полным SHA коммита,
+#: и действия самого репозитория
+ALLOWED_ACTION = re.compile(
+    r"^(actions/[\w.-]+@(v\d+|[0-9a-f]{40})|\./\.github/actions/[\w./-]+)$"
+)
+#: Подавление ошибки команды: «|| true», «|| :», «|| exit 0», «; exit 0», «; true»
+SUPPRESSED = re.compile(r"\|\|\s*(true|:|exit\s+0)\b|;\s*(true|exit\s+0)\b")
 
 
 @dataclass
@@ -62,6 +67,7 @@ class Job:
     uses: list[str] = field(default_factory=list)
     continue_on_error: bool = False
     suppressed: bool = False
+    disabled_steps: int = 0
 
 
 def make_targets(command: str) -> set[str]:
@@ -105,15 +111,18 @@ def parse_workflow(text: str) -> dict[str, Job]:
             else:
                 current.needs += [v.strip() for v in value.strip("[]").split(",") if v.strip()]
             continue
-        if re.match(r"^\s+continue-on-error:\s*true", line):
+        if re.match(r"^\s+continue-on-error:\s*(true|\$\{\{)", line):
             current.continue_on_error = True
+        # Шаг или задача, выключенные условием, которое всегда ложно
+        if re.match(r"^\s+(?:-\s+)?if:\s*(false|\$\{\{\s*false\s*\}\}|0)\s*$", line):
+            current.disabled_steps += 1
         uses = re.match(r"^\s+(?:-\s+)?uses:\s*(\S+)", line)
         if uses:
             current.uses.append(uses.group(1))
         run = re.match(r"^\s+(?:-\s+)?run:\s*(make\s.*)$", line)
         if run:
             command = run.group(1)
-            if re.search(r"\|\|\s*(true|:)|;\s*true\b", command):
+            if SUPPRESSED.search(command):
                 current.suppressed = True
             current.targets |= make_targets(command) - HELPER_TARGETS
     return jobs
@@ -176,7 +185,9 @@ def check(jobs: dict[str, Job], stages: dict[str, set[str]]) -> list[str]:
                 f"«{name}»: continue-on-error — сбой задачи не остановил бы конвейер"
             )
         if job.suppressed:
-            problems.append(f"«{name}»: ошибка make подавлена (|| true)")
+            problems.append(f"«{name}»: ошибка make подавлена (|| true, exit 0)")
+        if job.disabled_steps:
+            problems.append(f"«{name}»: шаг или задача выключены условием if: false")
         for action in job.uses:
             if not ALLOWED_ACTION.match(action):
                 problems.append(
@@ -187,11 +198,22 @@ def check(jobs: dict[str, Job], stages: dict[str, set[str]]) -> list[str]:
 
 
 def main() -> int:
-    if not WORKFLOW.exists():
-        print(f"Нет файла конвейера {WORKFLOW}", file=sys.stderr)
+    parser = argparse.ArgumentParser(description="Конвейер CI и make ci совпадают")
+    parser.add_argument(
+        "--project-dir",
+        type=Path,
+        default=ROOT,
+        help="каталог project/ проверяемого дерева (guard-main проверяет им файлы запроса)",
+    )
+    args = parser.parse_args()
+    project = args.project_dir.resolve()
+    workflow = project.parent / ".github" / "workflows" / "ci.yml"
+    ci_local = project / "scripts" / "ci_local.sh"
+    if not workflow.exists():
+        print(f"Нет файла конвейера {workflow}", file=sys.stderr)
         return 1
-    jobs = parse_workflow(WORKFLOW.read_text(encoding="utf-8"))
-    stages = parse_stages(CI_LOCAL.read_text(encoding="utf-8"))
+    jobs = parse_workflow(workflow.read_text(encoding="utf-8"))
+    stages = parse_stages(ci_local.read_text(encoding="utf-8"))
     problems = check(jobs, stages)
     if not problems:
         print(

@@ -56,11 +56,22 @@ from typing import Any
 
 JUSTIFICATION = re.compile(r"^Обоснование-ослабления:\s*(.{20,})$", re.MULTILINE)
 
-#: Критические файлы проекта (пути относительно каталога проекта)
+#: Критические файлы проекта (пути относительно каталога проекта). Все
+#: сценарии scripts/ — критические: через них идут сами проверки (run.sh,
+#: lib.sh, migrate_drill.sh), и правка любого из них может проверку отключить.
+#: Файлы настроек инструментов — тоже: ruff, mypy, pytest и coverage читают
+#: ruff.toml, mypy.ini, pytest.ini, .coveragerc раньше pyproject.toml
 CRITICAL = (
     "tests/*",
+    "scripts/*",
     "Makefile",
     "pyproject.toml",
+    "*.toml",
+    "*.ini",
+    "*.cfg",
+    ".coveragerc",
+    "*conftest.py",
+    "sitecustomize.py",
     "docker/*",
     "docker-compose.yml",
     ".dockerignore",
@@ -70,18 +81,6 @@ CRITICAL = (
     "deploy/*",
     "migrations/env.py",
     "CONTRIBUTING.md",
-    "scripts/acceptance_guard.py",
-    "scripts/secret_scan.py",
-    "scripts/waiver_check.py",
-    "scripts/container_check.py",
-    "scripts/deps_check.py",
-    "scripts/image_scan.py",
-    "scripts/mutation_check.py",
-    "scripts/ci_local.sh",
-    "scripts/push_image.sh",
-    "scripts/ci_sync_check.py",
-    "scripts/ci_base.sh",
-    "scripts/codeowners_check.py",
 )
 #: Критические файлы в корне репозитория: настройки CI и правила согласования
 CRITICAL_REPO = (
@@ -116,6 +115,69 @@ CHECK_TARGETS = (
     "ci",
     "push",
     "publish",
+    "test-unit",
+    "test-int",
+    "schema-check",
+    "secrets-scan",
+    "ci-sync",
+    "codeowners-check",
+    "build-app",
+)
+
+#: Переменные Makefile, из которых собираются команды проверок
+CHECK_VARIABLES = (
+    "SHELL",
+    "LOCAL",
+    "DOCKER_READY",
+    "COMPOSE",
+    "RUN",
+    "DRILL_PREFIX",
+    "MIGRATE_CMD",
+    "DEPS_CMD",
+    "DEPS_PRE",
+    "GUARD_PATH",
+)
+
+#: Файлы настроек, которые инструменты проверок читают раньше pyproject.toml
+#: или подключают сами. Появление такого файла меняет поведение проверки
+#: в обход pyproject.toml
+TOOL_CONFIGS = frozenset(
+    {
+        "ruff.toml",
+        ".ruff.toml",
+        "mypy.ini",
+        ".mypy.ini",
+        "pytest.ini",
+        ".pytest.ini",
+        "tox.ini",
+        "setup.cfg",
+        ".coveragerc",
+        ".bandit",
+        ".flake8",
+        "conftest.py",
+        "sitecustomize.py",
+        "usercustomize.py",
+    }
+)
+
+#: Сценарии, через которые запускаются сами проверки: правка любого из них
+#: может отключить проверку целиком (например, run.sh выходит с 0 вместо
+#: запуска pytest). Любое изменение — только с обоснованием
+RUNNER_SCRIPTS = (
+    "scripts/run.sh",
+    "scripts/lib.sh",
+    "scripts/migrate_drill.sh",
+    "scripts/restore_drill.sh",
+    "scripts/ci_local.sh",
+    "scripts/ci_base.sh",
+)
+
+#: Перехватчики pytest, которыми можно убрать или подменить тесты
+PYTEST_HOOKS = re.compile(
+    r"^\s*def\s+(pytest_collection_modifyitems|pytest_ignore_collect|pytest_collect_file|"
+    r"pytest_pycollect_makeitem|pytest_runtest_setup|pytest_runtest_call|"
+    r"pytest_runtest_makereport|pytest_configure|pytest_report_teststatus)\b",
+    re.MULTILINE,
 )
 
 #: Подавление ошибки или сужение проверки в команде make: метка -> образец
@@ -188,8 +250,21 @@ def is_test_file(path: str) -> bool:
     return path.startswith("tests/") and name.startswith("test_") and name.endswith(".py")
 
 
+def always_true(test: ast.expr) -> bool:
+    """assert, который не может упасть: assert True, assert 1, assert True or …"""
+    if isinstance(test, ast.Constant):
+        return bool(test.value)
+    if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.Or):
+        return any(isinstance(v, ast.Constant) and bool(v.value) for v in test.values)
+    return False
+
+
 def count_checks(node: ast.AST) -> int:
-    """assert и pytest.raises / pytest.warns внутри функции."""
+    """assert и pytest.raises / pytest.warns внутри функции.
+
+    Заведомо истинный assert проверкой не считается: «assert True or x == 1»
+    выглядит как проверка, но не падает никогда.
+    """
     total = 0
     for child in ast.walk(node):
         is_raises = (
@@ -197,7 +272,7 @@ def count_checks(node: ast.AST) -> int:
             and isinstance(child.func, ast.Attribute)
             and child.func.attr in {"raises", "warns"}
         )
-        if isinstance(child, ast.Assert) or is_raises:
+        if (isinstance(child, ast.Assert) and not always_true(child.test)) or is_raises:
             total += 1
     return total
 
@@ -348,13 +423,62 @@ def weak_marks(lines: list[str]) -> Counter[str]:
     return marks
 
 
+def tokens(lines: list[str]) -> set[str]:
+    """Слова команды без кавычек и обратных косых.
+
+    Префиксы строки рецепта make (@ — не печатать, - — игнорировать ошибку,
+    + — выполнять всегда) отбрасываются: они не часть команды, а «-» ловит
+    WEAK_RECIPE отдельно. Сообщения echo и printf не считаются: их текст
+    можно менять свободно.
+    """
+    words: set[str] = set()
+    for line in lines:
+        line = line.lstrip("\t ").lstrip("@-+")
+        for segment in re.split(r"&&|\|\||;|\|", line):
+            found = re.findall(r"[^\s\"'\\]+", segment)
+            if found and found[0].lstrip("@") in {"echo", "printf"}:
+                continue
+            words.update(found)
+    return words
+
+
+def parse_variables(text: str) -> dict[str, list[str]]:
+    """Переменная -> значения всех её определений (в том числе в ветках ifeq)."""
+    joined = re.sub(r"\\\n", " ", text)
+    found: dict[str, list[str]] = {}
+    for line in joined.splitlines():
+        match = re.match(
+            r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?::=|\?=|\+=|=)\s*(.*)$", line
+        )
+        if match:
+            found.setdefault(match.group(1), []).append(match.group(2))
+    return found
+
+
 def compare_makefile(base_text: str, head_text: str) -> list[str]:
     base, head = parse_makefile(base_text), parse_makefile(head_text)
     findings: list[str] = []
+    # Из команды проверки нельзя убрать часть незаметно: «--fail-under=80» →
+    # «--fail-under=0», рецепт quality → «echo ok». Добавлять можно
+    for target in CHECK_TARGETS:
+        if target in base and target in head:
+            removed = tokens(base[target][1]) - tokens(head[target][1])
+            if removed:
+                findings.append(
+                    f"Makefile: из команды make {target} убрано — {', '.join(sorted(removed))}"
+                )
+    old_vars, new_vars = parse_variables(base_text), parse_variables(head_text)
+    for name in CHECK_VARIABLES:
+        if name in old_vars:
+            removed = tokens(old_vars[name]) - tokens(new_vars.get(name, []))
+            if removed:
+                findings.append(
+                    f"Makefile: из переменной {name} убрано — {', '.join(sorted(removed))}"
+                )
     if "verify" in base and "verify" in head:
-        removed = [p for p in base["verify"][0] if p not in head["verify"][0]]
-        if removed:
-            findings.append(f"Makefile: из make verify убраны шаги — {', '.join(removed)}")
+        dropped = [p for p in base["verify"][0] if p not in head["verify"][0]]
+        if dropped:
+            findings.append(f"Makefile: из make verify убраны шаги — {', '.join(dropped)}")
     for target in CHECK_TARGETS:
         if target in base and target not in head:
             findings.append(f"Makefile: удалена цель проверки make {target}")
@@ -690,7 +814,37 @@ def collect(repo: Repo) -> tuple[list[str], int, int]:
         if path not in head_scripts and path != ".trivyignore.yaml":
             findings.append(f"{path}: удалён сценарий проверки")
     findings += compare_scripts(base_scripts, head_scripts)
+    findings += tool_config_changes(repo)
     return findings, count_tests(base_tests), count_tests(head_tests)
+
+
+def tool_config_changes(repo: Repo) -> list[str]:
+    """Новые файлы настроек инструментов и новые перехватчики pytest."""
+    findings: list[str] = []
+    for status, _old, new in repo.changes:
+        if not new.startswith(repo.prefix):
+            continue
+        inner = new[len(repo.prefix) :]
+        name = inner.rsplit("/", 1)[-1]
+        if status in {"M", "D", "R"} and _old[len(repo.prefix) :] in RUNNER_SCRIPTS:
+            findings.append(
+                f"{_old[len(repo.prefix) :]}: изменён сценарий запуска проверок — через него "
+                "идут сами проверки"
+            )
+        if status == "A" and (name in TOOL_CONFIGS or name.endswith(".pth")):
+            findings.append(
+                f"{inner}: новый файл настроек проверок — инструменты читают его в обход "
+                "pyproject.toml"
+            )
+        if name == "conftest.py" and status in {"M", "R"}:
+            before = repo.base_file(_old[len(repo.prefix) :]) or ""
+            after = repo.head_file(inner) or ""
+            if len(PYTEST_HOOKS.findall(after)) > len(PYTEST_HOOKS.findall(before)):
+                findings.append(
+                    f"{inner}: добавлен перехватчик pytest — им можно убрать "
+                    "или подменить тесты"
+                )
+    return findings
 
 
 # --------------------------------------------------------------------------- #

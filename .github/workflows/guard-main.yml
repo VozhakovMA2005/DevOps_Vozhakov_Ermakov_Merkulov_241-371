@@ -1,0 +1,71 @@
+# Защита проверок, которую ветка не может подменить — ЛР5, пункты 13–15.
+#
+# Конвейер ci.yml берётся из проверяемой ветки: автор запроса на слияние
+# мог бы в той же ветке поправить Makefile, сценарий проверки или сам ci.yml
+# так, чтобы ослабление не нашлось. Этот workflow запускается событием
+# pull_request_target: GitHub берёт его из main, а не из ветки, поэтому и
+# сценарии проверки, и их правила — из main.
+#
+# Файлы запроса здесь только читаются как данные: сценарии разбирают их
+# синтаксическим деревом и TOML, ни одна строка кода из запроса не
+# выполняется. Секреты не используются, права — только чтение.
+#
+# Проверка guard-main — обязательная в правиле защиты main.
+
+name: guard-main
+
+on:
+  pull_request_target:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guard-main-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  guard-main:
+    name: guard-main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Код main — проверки берутся отсюда
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          fetch-depth: 0
+
+      # Только загрузка: файлы запроса раскладываются отдельным деревом и не
+      # выполняются
+      - name: Файлы запроса — как данные
+        working-directory: base
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+          git update-ref refs/remotes/origin/main "$BASE_SHA"
+          git worktree add --detach ../pr refs/remotes/pr/head
+
+      - name: Ослабление проверок — сценарий из main
+        run: |
+          mkdir -p "$RUNNER_TEMP/reports"
+          python3 -I base/project/scripts/acceptance_guard.py \
+            --base origin/main --project-dir pr/project \
+            --report "$RUNNER_TEMP/reports/guard.md"
+
+      - name: Конвейер CI не ослаблен — сценарий из main
+        if: always()
+        run: python3 -I base/project/scripts/ci_sync_check.py --project-dir pr/project
+
+      - name: Отчёт — в сводку
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/reports/guard.md" ] && cat "$RUNNER_TEMP/reports/guard.md" >> "$GITHUB_STEP_SUMMARY" || true
