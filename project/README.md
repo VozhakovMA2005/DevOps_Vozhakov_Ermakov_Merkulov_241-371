@@ -15,6 +15,22 @@
 
 ---
 
+## Этап 5: непрерывная интеграция
+
+```bash
+make ci                                  # весь конвейер CI локально
+make registry-up                         # локальный реестр образов
+make publish REGISTRY=localhost:5000     # конвейер и, только при успехе, публикация
+```
+
+Стадии конвейера — те же цели `make`, что вызывает сервер CI: стиль,
+безопасность (код, секреты в дереве и в коммитах ветки, зависимости, защита
+файлов приёмки), тесты, миграции, резервное копирование, сборка, контейнерная
+проверка, анализ образа, публикация с тегом `sha-<коммит>`. Подробно —
+[docs/ci.md](docs/ci.md).
+
+---
+
 ## Этап 4: контейнеры
 
 ```bash
@@ -117,7 +133,9 @@ make mode      # каким способом пойдут проверки: в �
 | Копии | `make backup`, `make restore FILE=…`, `make backup-local`, `make restore-local FILE=…`, `make restore-drill` |
 | Тесты | `make test`, `make test-cov`, `make test-report`, `make coverage-services`, `make mutants` |
 | Анализ | `make quality`, `make types`, `make sast`, `make secrets`, `make waivers` |
-| Образ | `make container-check` |
+| Безопасность (этап 5) | `make secrets-branch`, `make deps-check`, `make image-scan`, `make guard` |
+| Образ | `make container-check`, `make image-scan` |
+| Конвейер и публикация (этап 5) | `make ci`, `make push REGISTRY=…`, `make publish REGISTRY=…`, `make registry-up`, `make registry-ls` |
 
 `make verify` выполняет по порядку: `quality` → `types` → `sast` → `secrets` →
 `waivers` → `migrate-check` → `test`. Если хоть один шаг красный, запрос на
@@ -144,5 +162,7 @@ make mode      # каким способом пойдут проверки: в �
 | `CONTRIBUTING.md` | правила внесения изменений, команды проверки, порядок приёмки |
 | `docs/deploy.md` | развёртывание, диагностика, восстановление |
 | `docs/testing.md` | что покрыто тестами и как их читать |
+| `docs/containers.md` | контейнерное окружение, анализ образа |
+| `docs/ci.md` | конвейер CI: стадии, отчёты, публикация, защита проверок |
 
 Машинное описание API в формате OpenAPI отдаётся по адресу `/api/openapi.json`.
