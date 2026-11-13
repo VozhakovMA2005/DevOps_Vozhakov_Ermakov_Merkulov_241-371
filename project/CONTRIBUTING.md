@@ -167,6 +167,9 @@ make guard      # с этапа 5: ветка не ослабляет прове
 | `make sast` | статический анализ на безопасность |
 | `make secrets` | поиск секретов и запрещённых файлов |
 | `make waivers` | запрет исключений без обоснования |
+| `make push REGISTRY=…` | опубликовать образ с тегом `sha-<коммит>` — только после успешного `make ci` для этого коммита |
+| `make publish REGISTRY=…` | `make ci`, и только при успехе — `make push` |
+| `make registry-up` / `registry-ls` / `registry-down` | локальный реестр образов на `127.0.0.1:5000` |
 | `make ci` | весь конвейер CI локально: стадии, отчёты, сводка `reports/ci-summary.md` (раздел 3.5) |
 | `make guard` | защита файлов приёмки: удалённые тесты и ослабленные проверки относительно `BASE` (раздел 5) |
 | `make secrets-branch` | секреты во всех коммитах ветки относительно `BASE` (по умолчанию `origin/main`), включая удалённые позже |
@@ -299,6 +302,7 @@ make restore-local FILE=$(ls -t backups/*.dump | head -1)   # восстанов
 | ослаблять проверки CI ради прохождения конвейера | то же |
 | менять схему базы вручную SQL-скриптами в обход Alembic | схема расходится с миграциями, обновление ломается |
 | использовать тег `latest` для образов | сборка перестаёт быть воспроизводимой |
+| публиковать образ в обход `make push`: без пройденного конвейера, из грязного дерева, из другого коммита | в реестр попадает непроверенный артефакт |
 | запускать контейнеры от `root` | нарушение требований 4.5 ТЗ |
 | помещать секреты в образ: `.env`, ключи, пароли в `ENV`, `ARG` или файлах | образ копируют и публикуют, секрет уходит вместе с ним |
 | отключать или убирать `healthcheck` | нездоровый контейнер не обнаруживается, порядок запуска ломается |
@@ -357,7 +361,7 @@ requirements*.txt        requirements*.lock      .trivyignore.yaml
 deploy/**                migrations/env.py       CONTRIBUTING.md
 scripts/acceptance_guard.py   scripts/secret_scan.py   scripts/waiver_check.py
 scripts/container_check.py    scripts/deps_check.py    scripts/image_scan.py
-scripts/mutation_check.py     scripts/ci_local.sh
+scripts/mutation_check.py     scripts/ci_local.sh      scripts/push_image.sh
 настройки CI и правила согласования в корне репозитория
 ```
 

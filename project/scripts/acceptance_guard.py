@@ -78,6 +78,7 @@ CRITICAL = (
     "scripts/image_scan.py",
     "scripts/mutation_check.py",
     "scripts/ci_local.sh",
+    "scripts/push_image.sh",
 )
 #: Критические файлы в корне репозитория: настройки CI и правила согласования
 CRITICAL_REPO = (

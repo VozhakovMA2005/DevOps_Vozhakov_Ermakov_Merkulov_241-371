@@ -24,6 +24,9 @@ export GIT_COMMIT
 export BUILDX_NO_DEFAULT_ATTESTATIONS := 1
 # С чем сравнивается ветка: проверки истории и защиты файлов приёмки (ЛР5)
 BASE ?= origin/main
+# Образ приложения и реестр для публикации (ЛР5): make push REGISTRY=…
+APP_IMAGE := audfond:0.4.0
+REGISTRY ?=
 
 DOCKER_READY := $(shell docker info >/dev/null 2>&1 && test -f .env.docker && echo 1 || echo 0)
 LOCAL ?= $(if $(filter 1,$(DOCKER_READY)),0,1)
@@ -71,7 +74,8 @@ endif
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
-        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard ci checks-image
+        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard ci checks-image \
+        push publish registry-up registry-down registry-ls
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -302,6 +306,26 @@ verify: quality types sast secrets waivers migrate-check test ## Полная п
 # Порядок стадий и отметка для публикации — scripts/ci_local.sh
 ci: ## Конвейер CI локально: стиль, безопасность, тесты, миграции, копия, сборка, образ
 	@MAKE="$(MAKE)" bash scripts/ci_local.sh
+
+# Публикация — только образа, прошедшего make ci для этого же коммита:
+# scripts/push_image.sh проверяет отметку reports/ci-passed, чистоту дерева
+# и метку коммита в образе. Тег — sha-<SHA коммита>, latest не ставится
+push: ## Опубликовать проверенный образ с тегом sha-<коммит>: make push REGISTRY=localhost:5000
+	@REGISTRY="$(REGISTRY)" APP_IMAGE="$(APP_IMAGE)" bash scripts/push_image.sh
+
+publish: ## Конвейер целиком и публикация, только если он пройден: make publish REGISTRY=…
+	@test -n "$(REGISTRY)" || (echo "Укажите реестр: make publish REGISTRY=localhost:5000" && exit 1)
+	@$(MAKE) --no-print-directory ci
+	@$(MAKE) --no-print-directory push
+
+registry-up: ## Локальный реестр образов на 127.0.0.1:5000 («локальный docker hub»)
+	@bash scripts/registry.sh up
+
+registry-ls: ## Образы и теги в локальном реестре
+	@bash scripts/registry.sh ls
+
+registry-down: ## Остановить локальный реестр (образы остаются)
+	@bash scripts/registry.sh down
 
 verify-local: ## Полная проверка, явно без контейнеров
 	@$(MAKE) --no-print-directory LOCAL=1 verify
