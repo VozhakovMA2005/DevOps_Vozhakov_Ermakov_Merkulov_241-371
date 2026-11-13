@@ -76,7 +76,7 @@ endif
         docker-env build preflight up down logs ps shell container-check persist-drill \
         shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard ci checks-image \
         push publish registry-up registry-down registry-ls \
-        test-unit test-int schema-check secrets-scan build-app
+        test-unit test-int schema-check secrets-scan build-app ci-sync
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -300,6 +300,9 @@ guard: ## Защита файлов приёмки: удалённые тест�
 	  echo "В $(BASE) сценария ещё нет: запускается версия из ветки"; \
 	  python3 scripts/acceptance_guard.py --base "$(BASE)" --project-dir . --report reports/guard.md; \
 	fi
+
+ci-sync: ## Стадии .github/workflows/ci.yml и make ci совпадают, порядок ТЗ 7.1 соблюдён
+	python3 scripts/ci_sync_check.py
 
 deps-check: ## Зависимости из lock-файлов — на известные уязвимости (нужен pypi.org)
 	@mkdir -p reports && chmod a+rwx reports

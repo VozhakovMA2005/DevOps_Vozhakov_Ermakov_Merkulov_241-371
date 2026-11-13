@@ -1,0 +1,45 @@
+# Окружение проверок для задач конвейера CI — ЛР5, пункты 4 и 8.
+#
+# Те же закреплённые версии инструментов, что у разработчика: окружение
+# .venv ставится из requirements-dev.lock с проверкой контрольных сумм.
+# Загруженные пакеты кэшируются (actions/setup-python, cache: pip): ключ —
+# содержимое lock-файлов, при их изменении кэш собирается заново.
+name: Окружение проверок AudFond
+description: Python 3.12 и инструменты из requirements-dev.lock, по желанию — клиент PostgreSQL 17
+
+inputs:
+  pg-client:
+    description: Поставить клиент PostgreSQL 17 (pg_dump той же основной версии, что сервер)
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Python 3.12 с кэшем пакетов
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+        cache: pip
+        cache-dependency-path: |
+          project/requirements.lock
+          project/requirements-dev.lock
+
+    - name: Окружение .venv из requirements-dev.lock
+      shell: bash
+      working-directory: project
+      run: |
+        python -m venv .venv
+        .venv/bin/pip install --quiet --require-hashes --no-deps -r requirements-dev.lock
+        .venv/bin/pip check
+
+    # pg_dump отказывается снимать копию с более нового сервера: клиент
+    # нужен той же основной версии, что PostgreSQL 17 в службе задачи
+    - name: Клиент PostgreSQL 17
+      if: inputs.pg-client == 'true'
+      shell: bash
+      run: |
+        sudo apt-get install -y --no-install-recommends postgresql-common
+        sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+        sudo apt-get install -y --no-install-recommends postgresql-client-17
+        echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"

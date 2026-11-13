@@ -1,0 +1,531 @@
+# Конвейер непрерывной интеграции AudFond — ЛР5; ТЗ 7.1, 7.2.
+#
+# Каждая стадия — цель make, та же, что разработчик запускает у себя
+# (make ci проходит стадии в том же порядке). Новая проверка добавляется в
+# Makefile, а не сюда: иначе локальные и серверные проверки разойдутся.
+#
+# Порядок проверок — из ТЗ 7.1:
+#   lint → types → sast → test → test-int → migrate-check → schema-check →
+#   secrets-scan → deps-check
+# затем защита проверок (guard), резервное копирование (backup), сборка
+# образа (build), проверка его структуры (container-check), анализ
+# уязвимостей (image-scan) и публикация (publish).
+#
+# Публикация ждёт все стадии и выполняется только для main и тегов выпуска.
+# Упала любая стадия — образ не публикуется (пункт 10 задания).
+#
+# Сторонних действий нет: только actions/* от GitHub. Сканер образа
+# запускается сценарием проекта из закреплённого образа Trivy, а не
+# действием trivy-action, скомпрометированным в марте 2026.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Новый прогон той же ветки отменяет устаревший; прогоны main не отменяются
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # Проверки на сервере идут в окружении .venv (make LOCAL=1), база —
+  # отдельный контейнер PostgreSQL 17 на время задачи
+  LOCAL: "1"
+  PYTHONUNBUFFERED: "1"
+  FORCE_COLOR: "0"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: project
+
+jobs:
+  # ------------------------------------------------------------------------ #
+  config:
+    name: config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Защищённые переменные заданы
+        env:
+          TEST_DB_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+        run: |
+          if [ -z "$TEST_DB_PASSWORD" ]; then
+            echo "::error::Не задан секрет TEST_DB_PASSWORD: Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+          echo "Пароль тестовой базы — в защищённой переменной TEST_DB_PASSWORD"
+
+  # ------------------------------------------------------------------------ #
+  lint:
+    name: lint
+    needs: config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make quality
+        run: make quality
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-lint
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  types:
+    name: types
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make types
+        run: make types
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-types
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  sast:
+    name: sast
+    needs: types
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make sast
+        run: make sast
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-sast
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  test:
+    name: test
+    needs: sast
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make test-unit
+        run: make test-unit
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-test
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  test-int:
+    name: test-int
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_USER: audfond_ci
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U audfond_ci -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_ADMIN_DSN: postgresql://audfond_ci:${{ secrets.TEST_DB_PASSWORD }}@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make test-int
+        run: make test-int
+      - name: Покрытие — в сводку задачи
+        if: always()
+        run: |
+          if [ -f reports/coverage-services.json ]; then
+            python3 -c "import json; t=json.load(open('reports/coverage-services.json'))['totals']; print(f'Покрытие сервисного слоя: {t[\"percent_covered\"]:.1f}% (порог 80%)')" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-test-int
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  migrate-check:
+    name: migrate-check
+    needs: test-int
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_USER: audfond_ci
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U audfond_ci -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      ADMIN_DATABASE_URL: postgresql://audfond_ci:${{ secrets.TEST_DB_PASSWORD }}@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make migrate-check
+        run: make migrate-check
+
+  schema-check:
+    name: schema-check
+    needs: migrate-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_USER: audfond_ci
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U audfond_ci -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      ADMIN_DATABASE_URL: postgresql://audfond_ci:${{ secrets.TEST_DB_PASSWORD }}@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make schema-check
+        run: make schema-check
+
+  secrets-scan:
+    name: secrets-scan
+    needs: schema-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Вся история: проверяются все коммиты ветки, а не только последний
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: С чем сравнивать ветку
+        run: bash scripts/ci_base.sh >> "$GITHUB_ENV"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+      - name: make secrets-scan
+        run: make secrets-scan BASE="$BASE"
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-secrets-scan
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  deps-check:
+    name: deps-check
+    needs: secrets-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: make deps-check
+        run: make deps-check
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-deps-check
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ------------------------------------------------------------------------ #
+  # Защита проверок: исключения без причины, ослабление относительно main,
+  # совпадение стадий здесь и в make ci. Сценарий guard берётся из main
+  guard:
+    name: guard
+    needs: deps-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+      - name: С чем сравнивать ветку
+        run: bash scripts/ci_base.sh >> "$GITHUB_ENV"
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+      - name: make waivers guard ci-sync
+        run: make waivers guard ci-sync BASE="$BASE"
+      - name: Отчёт guard — в сводку задачи
+        if: always()
+        run: |
+          [ -f reports/guard.md ] && cat reports/guard.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-guard
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  backup:
+    name: backup
+    needs: deps-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_USER: audfond_ci
+          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U audfond_ci -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      ADMIN_DATABASE_URL: postgresql://audfond_ci:${{ secrets.TEST_DB_PASSWORD }}@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/checks-env
+        with:
+          pg-client: "true"
+      - name: make restore-drill
+        run: make restore-drill
+
+  # ------------------------------------------------------------------------ #
+  # Сборка один раз: образ передаётся следующим задачам файлом. Проверяется
+  # и публикуется ровно тот образ, что собран здесь
+  build:
+    name: build
+    needs: [guard, backup]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Настройки сборки (.env.docker со случайными значениями)
+        run: make docker-env
+      - name: make build-app
+        run: make build-app
+      - name: Образ — в файл
+        run: docker image save audfond:0.4.0 | gzip -1 > "$RUNNER_TEMP/audfond-image.tar.gz"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image
+          path: ${{ runner.temp }}/audfond-image.tar.gz
+          retention-days: 3
+
+  container-check:
+    name: container-check
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: Загрузить образ
+        run: gunzip -c "$RUNNER_TEMP/audfond-image.tar.gz" | docker image load
+      - name: Настройки окружения
+        run: make docker-env
+      - name: make container-check
+        run: make container-check
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-container-check
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  image-scan:
+    name: image-scan
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: Загрузить образ
+        run: gunzip -c "$RUNNER_TEMP/audfond-image.tar.gz" | docker image load
+      # База уязвимостей обновляется ежедневно: ключ кэша — дата
+      - name: Дата для кэша базы уязвимостей
+        id: day
+        run: echo "value=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Кэш базы уязвимостей Trivy
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/audfond-trivy
+          key: trivy-db-${{ steps.day.outputs.value }}
+          restore-keys: trivy-db-
+      - name: make image-scan
+        run: make image-scan
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-image-scan
+          path: project/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ------------------------------------------------------------------------ #
+  # Итог для правила защиты main: одна обязательная проверка, которая падает,
+  # если хоть одна стадия не прошла, была отменена или пропущена
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs:
+      - config
+      - lint
+      - types
+      - sast
+      - test
+      - test-int
+      - migrate-check
+      - schema-check
+      - secrets-scan
+      - deps-check
+      - guard
+      - backup
+      - build
+      - container-check
+      - image-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Все обязательные стадии пройдены
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key)\t\(.value.result)"'
+          bad="$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")')"
+          if [ -n "$bad" ]; then
+            echo "::error::Не пройдены стадии: $bad"
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------------ #
+  # Публикация в реестр GitHub: только main и теги выпуска, только после
+  # всех стадий. Токен — встроенный GITHUB_TOKEN с правом записи пакетов
+  publish:
+    name: publish
+    needs: ci-gate
+    if: >-
+      needs.ci-gate.result == 'success' && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # Вся история с тегами: тег выпуска даёт образу тег версии
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: ${{ runner.temp }}
+      - name: Загрузить образ
+        run: gunzip -c "$RUNNER_TEMP/audfond-image.tar.gz" | docker image load
+      # На сервере отметку о пройденном конвейере ставит сама CI-система:
+      # эта задача запускается только после успеха всех стадий (needs)
+      - name: Отметка о пройденном конвейере
+        run: mkdir -p reports && echo "$GITHUB_SHA" > reports/ci-passed
+      - name: Вход в ghcr.io
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+      - name: make push
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: make push REGISTRY="ghcr.io/${OWNER,,}"
+      - name: Выйти из реестра
+        if: always()
+        run: docker logout ghcr.io
