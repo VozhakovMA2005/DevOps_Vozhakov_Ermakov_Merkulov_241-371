@@ -60,7 +60,7 @@ FROM base AS runtime
 
 ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.title="AudFond" \
-      org.opencontainers.image.version="0.4.0" \
+      org.opencontainers.image.version="0.5.0" \
       org.opencontainers.image.revision="${GIT_COMMIT}"
 
 # Процесс приложения работает не от root (пункт 3, ТЗ 4.5). Номер задан

@@ -46,7 +46,7 @@ DOCKERFILE = ROOT / "docker" / "Dockerfile"
 COMPOSE_FILE = ROOT / "docker-compose.yml"
 ENV_FILE = ROOT / ".env.docker"
 ENV_SAMPLE = ROOT / ".env.docker.example"
-APP_IMAGE = "audfond:0.4.0"
+APP_IMAGE = "audfond:0.5.0"
 PROJECT = "audfond"
 
 #: Единственный разрешённый опубликованный порт: служба -> порт в контейнере

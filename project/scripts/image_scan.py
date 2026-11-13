@@ -26,7 +26,7 @@
 Только стандартная библиотека: запускается на машине без окружения проекта.
 
     python3 scripts/image_scan.py
-    python3 scripts/image_scan.py --image audfond:0.4.0 --report reports/trivy.json
+    python3 scripts/image_scan.py --image audfond:0.5.0 --report reports/trivy.json
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_IMAGE = "audfond:0.4.0"
+APP_IMAGE = "audfond:0.5.0"
 TRIVY_IMAGE = "aquasec/trivy:0.72.0"
 IGNORE_FILE = ROOT / ".trivyignore.yaml"
 DEFAULT_REPORT = ROOT / "reports" / "trivy.json"

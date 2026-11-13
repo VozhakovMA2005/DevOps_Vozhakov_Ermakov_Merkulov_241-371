@@ -156,7 +156,7 @@ pypi="$(http_code https://pypi.org/simple/pip/ 20)"
 files="$(http_code https://files.pythonhosted.org/ 20)"
 if [ "$pypi" = "200" ] && [ "$files" != "000" ]; then
     ok "PyPI доступен"
-elif docker image inspect audfond:0.4.0 >/dev/null 2>&1; then
+elif docker image inspect audfond:0.5.0 >/dev/null 2>&1; then
     warn "PyPI отвечает с ошибками (pypi.org: $pypi, files.pythonhosted.org: $files)" \
          "образ уже собран: при неизменном requirements.lock пакеты не загружаются"
 else

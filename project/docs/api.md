@@ -1,7 +1,7 @@
 # Контракты HTTP API
 
 Программный документ по разделу 5 ТЗ **А.В.00001-01 33 01-1**.
-Версия API v1, версия программы v0.4.0.
+Версия API v1, версия программы v0.5.0.
 
 Машинное описание в формате OpenAPI: `/api/openapi.json`.
 Просмотр в браузере: `/api/docs`.
@@ -409,7 +409,7 @@ GET /healthz
 
 ```http
 GET /readyz
-→ 200 {"status": "ok", "version": "0.4.0",
+→ 200 {"status": "ok", "version": "0.5.0",
        "checks": {"database": "ok", "migrations": "ok: 0002_seed_reference"}}
 → 503 {"error": {"code": "DB_UNAVAILABLE", …}}
 → 503 {"error": {"code": "MIGRATIONS_NOT_APPLIED", …}}
@@ -417,7 +417,7 @@ GET /readyz
 
 ```http
 GET /version
-→ 200 {"version": "0.4.0", "commit": "a1b2c3d", "app_env": "production", "instance": "app-1"}
+→ 200 {"version": "0.5.0", "commit": "a1b2c3d", "app_env": "production", "instance": "app-1"}
 ```
 
 Каждый ответ приложения несёт заголовок `X-Instance` — имя экземпляра, который

@@ -23,7 +23,7 @@ from app.context import get_request_id, new_request_id, set_request_id
 from app.errors import ApiError
 from app.logging_setup import configure_logging
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 log = logging.getLogger("audfond")
 access_log = logging.getLogger("audfond.access")

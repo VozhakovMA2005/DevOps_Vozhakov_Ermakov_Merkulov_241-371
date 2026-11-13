@@ -92,10 +92,10 @@ make seed           # демонстрационные данные (по жел
 | Служба | Образ | Сети | Порт наружу | Назначение |
 |---|---|---|---|---|
 | `db` | `postgres:17.2-alpine` | backend | нет | PostgreSQL, данные на томе `audfond_db-data` |
-| `migrate` | `audfond:0.4.0` | backend | нет | накатывает миграции и выходит |
-| `app1`, `app2` | `audfond:0.4.0` | backend, frontend | нет | два экземпляра приложения |
+| `migrate` | `audfond:0.5.0` | backend | нет | накатывает миграции и выходит |
+| `app1`, `app2` | `audfond:0.5.0` | backend, frontend | нет | два экземпляра приложения |
 | `nginx` | `nginxinc/nginx-unprivileged:1.27.3-alpine` | frontend | 8080 | единственная точка входа |
-| `tests` | `audfond-tests:0.4.0` | backend | нет | `make verify` в контейнере, по требованию |
+| `tests` | `audfond-tests:0.5.0` | backend | нет | `make verify` в контейнере, по требованию |
 
 Сеть `backend` объявлена `internal`: у неё нет выхода наружу, а база в ней
 недоступна ни с машины, ни из интернета. Nginx в эту сеть не входит и к базе
@@ -299,7 +299,7 @@ make build        # собрать образ
 make image-scan   # проверить его
 ```
 
-`scripts/image_scan.py` проверяет образ приложения `audfond:0.4.0` — тот, что
+`scripts/image_scan.py` проверяет образ приложения `audfond:0.5.0` — тот, что
 работает в бою и публикуется. Ищутся известные уязвимости в пакетах системы
 (Debian) и в пакетах Python внутри образа. Сканер — Trivy.
 
