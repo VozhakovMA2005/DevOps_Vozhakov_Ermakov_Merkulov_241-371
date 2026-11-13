@@ -299,7 +299,8 @@ jobs:
 
   # ------------------------------------------------------------------------ #
   # Защита проверок: исключения без причины, ослабление относительно main,
-  # совпадение стадий здесь и в make ci. Сценарий guard берётся из main
+  # совпадение стадий здесь и в make ci, закрепление критических файлов в
+  # CODEOWNERS. Сценарий guard берётся из main
   guard:
     name: guard
     needs: deps-check
@@ -317,8 +318,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF: ${{ github.ref }}
           BEFORE: ${{ github.event.before }}
-      - name: make waivers guard ci-sync
-        run: make waivers guard ci-sync BASE="$BASE"
+      - name: make waivers guard ci-sync codeowners-check
+        run: make waivers guard ci-sync codeowners-check BASE="$BASE"
       - name: Отчёт guard — в сводку задачи
         if: always()
         run: |

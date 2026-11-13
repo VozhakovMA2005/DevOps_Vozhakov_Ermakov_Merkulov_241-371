@@ -178,6 +178,7 @@ make guard      # с этапа 5: ветка не ослабляет прове
 | `make publish REGISTRY=…` | `make ci`, и только при успехе — `make push` |
 | `make registry-up` / `registry-ls` / `registry-down` | локальный реестр образов на `127.0.0.1:5000` |
 | `make ci` | весь конвейер CI локально: стадии, отчёты, сводка `reports/ci-summary.md` (раздел 3.5) |
+| `make codeowners-check` | каждый критический файл закреплён в `.github/CODEOWNERS` за двумя ответственными |
 | `make ci-sync` | стадии `.github/workflows/ci.yml` и `make ci` совпадают, порядок ТЗ 7.1 соблюдён |
 | `make guard` | защита файлов приёмки: удалённые тесты и ослабленные проверки относительно `BASE` (раздел 5) |
 | `make secrets-branch` | секреты во всех коммитах ветки относительно `BASE` (по умолчанию `origin/main`), включая удалённые позже |
@@ -374,6 +375,13 @@ scripts/mutation_check.py     scripts/ci_local.sh      scripts/push_image.sh
 
 Список продублирован в `scripts/acceptance_guard.py` (`CRITICAL`): `make guard`
 перечисляет изменённые критические файлы в каждом запросе на слияние.
+
+Ответственные — в **`.github/CODEOWNERS`**, у каждого пути не меньше двух:
+автор сам себя не одобряет. Правило защиты `main`
+(`.github/rulesets/main.json`) требует одобрения ответственного
+(«Require review from Code Owners»), поэтому изменение критического файла без
+него не сливается технически. `make codeowners-check` проверяет, что каждый
+критический файл в CODEOWNERS закреплён.
 
 ### Ослабление проверок не проходит незаметно
 

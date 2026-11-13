@@ -1,0 +1,51 @@
+# Ответственные за критические файлы приёмки — ТЗ 7.1; ЛР5, пункты 13–14.
+#
+# Изменение любого файла ниже требует одобрения одного из ответственных:
+# правило защиты main включает «Require review from Code Owners»
+# (.github/rulesets/main.json). Автор запроса на слияние сам себя одобрить не
+# может, поэтому у каждого пути не меньше двух ответственных — одобряет тот,
+# кто не автор.
+#
+# Список путей совпадает с CRITICAL в project/scripts/acceptance_guard.py:
+# make codeowners-check (стадия guard) проверяет, что каждый критический файл
+# репозитория здесь закреплён.
+#
+# Логины — GitHub-логины участников:
+#   LOGIN_MERKULOV  Меркулов Г. С.  каркас, контейнеры, развёртывание, схема базы
+#   LOGIN_ERMAKOV   Ермаков М. А.   помещения, веб-интерфейс, конвейер и защита проверок
+#   LOGIN_VOZHAKOV  Вожаков М. А.   аутентификация, безопасность, секреты, зависимости
+
+# Конвейер CI и правила согласования
+/.github/                                   @LOGIN_ERMAKOV @LOGIN_MERKULOV
+
+# Единый командный интерфейс и настройки анализаторов
+/project/Makefile                           @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/pyproject.toml                     @LOGIN_MERKULOV @LOGIN_ERMAKOV
+/project/CONTRIBUTING.md                    @LOGIN_MERKULOV @LOGIN_ERMAKOV @LOGIN_VOZHAKOV
+
+# Тесты
+/project/tests/                             @LOGIN_ERMAKOV @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+
+# Контейнеры, зависимости, развёртывание, миграции
+/project/docker/                            @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/docker-compose.yml                 @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/.dockerignore                      @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/requirements*.txt                  @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+/project/requirements*.lock                 @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+/project/.trivyignore.yaml                  @LOGIN_VOZHAKOV @LOGIN_MERKULOV
+/project/deploy/                            @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/migrations/env.py                  @LOGIN_MERKULOV @LOGIN_ERMAKOV
+
+# Сценарии проверок
+/project/scripts/acceptance_guard.py        @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/ci_sync_check.py           @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/ci_local.sh                @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/ci_base.sh                 @LOGIN_ERMAKOV @LOGIN_MERKULOV
+/project/scripts/codeowners_check.py        @LOGIN_VOZHAKOV @LOGIN_ERMAKOV
+/project/scripts/waiver_check.py            @LOGIN_ERMAKOV @LOGIN_VOZHAKOV
+/project/scripts/mutation_check.py          @LOGIN_ERMAKOV @LOGIN_VOZHAKOV
+/project/scripts/secret_scan.py             @LOGIN_VOZHAKOV @LOGIN_ERMAKOV
+/project/scripts/deps_check.py              @LOGIN_VOZHAKOV @LOGIN_ERMAKOV
+/project/scripts/image_scan.py              @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/scripts/container_check.py         @LOGIN_MERKULOV @LOGIN_VOZHAKOV
+/project/scripts/push_image.sh              @LOGIN_MERKULOV @LOGIN_VOZHAKOV
