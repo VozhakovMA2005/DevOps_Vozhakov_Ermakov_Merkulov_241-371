@@ -25,14 +25,14 @@ export BUILDX_NO_DEFAULT_ATTESTATIONS := 1
 # С чем сравнивается ветка: проверки истории и защиты файлов приёмки (ЛР5)
 BASE ?= origin/main
 # Образ приложения и реестр для публикации (ЛР5): make push REGISTRY=…
-APP_IMAGE := audfond:0.4.0
+APP_IMAGE := audfond:0.5.0
 REGISTRY ?=
 
 DOCKER_READY := $(shell docker info >/dev/null 2>&1 && test -f .env.docker && echo 1 || echo 0)
 LOCAL ?= $(if $(filter 1,$(DOCKER_READY)),0,1)
 
 # Образ проверок: в нём закреплённые инструменты из requirements-dev.lock
-TESTS_IMAGE := audfond-tests:0.4.0
+TESTS_IMAGE := audfond-tests:0.5.0
 
 ifeq ($(LOCAL),1)
 RUN  := bash scripts/run.sh

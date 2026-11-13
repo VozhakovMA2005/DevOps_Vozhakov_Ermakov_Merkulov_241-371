@@ -27,7 +27,7 @@ x-app-image: &app-image
     target: runtime
     args:
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
-  image: audfond:0.4.0
+  image: audfond:0.5.0
 
 x-app-env: &app-env
   APP_ENV: ${APP_ENV:-production}
@@ -209,7 +209,7 @@ services:
       target: test
       args:
         PG_CLIENT_FROM_PGDG: ${PG_CLIENT_FROM_PGDG:-1}
-    image: audfond-tests:0.4.0
+    image: audfond-tests:0.5.0
     <<: *hardening
     depends_on:
       db:

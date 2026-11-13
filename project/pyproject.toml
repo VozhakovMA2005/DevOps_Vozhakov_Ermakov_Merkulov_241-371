@@ -1,6 +1,6 @@
 [project]
 name = "audfond"
-version = "0.4.0"
+version = "0.5.0"
 description = "Приложение для автоматизации контроля аудиторного фонда университета"
 requires-python = ">=3.12"
 

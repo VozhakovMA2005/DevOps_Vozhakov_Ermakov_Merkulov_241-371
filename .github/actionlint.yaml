@@ -1,0 +1,5 @@
+# Настройки actionlint — проверки .github/workflows/*.yml.
+# Метка собственного исполнителя на стенде audfond-app (задача publish-local)
+self-hosted-runner:
+  labels:
+    - audfond
