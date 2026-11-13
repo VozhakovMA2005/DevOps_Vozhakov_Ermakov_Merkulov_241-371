@@ -166,6 +166,7 @@ make verify
 | `make sast` | статический анализ на безопасность |
 | `make secrets` | поиск секретов и запрещённых файлов |
 | `make waivers` | запрет исключений без обоснования |
+| `make deps-check` | зависимости из lock-файлов — на известные уязвимости (`pip-audit`, нужен pypi.org) |
 | `make container-check` | проверка контейнерного окружения (раздел 3.4) |
 | `make backup` / `make restore FILE=…` | резервная копия и восстановление; в контейнерах — средствами контейнера базы |
 | `make backup-local` / `make restore-local FILE=…` | то же без контейнеров, на стенде |

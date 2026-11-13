@@ -26,6 +26,9 @@ export BUILDX_NO_DEFAULT_ATTESTATIONS := 1
 DOCKER_READY := $(shell docker info >/dev/null 2>&1 && test -f .env.docker && echo 1 || echo 0)
 LOCAL ?= $(if $(filter 1,$(DOCKER_READY)),0,1)
 
+# Образ проверок: в нём закреплённые инструменты из requirements-dev.lock
+TESTS_IMAGE := audfond-tests:0.4.0
+
 ifeq ($(LOCAL),1)
 RUN  := bash scripts/run.sh
 MODE := без контейнеров, окружение $(VENV)
@@ -36,6 +39,8 @@ BACKUP_CMD  := bash scripts/backup.sh
 RESTORE_CMD  = bash scripts/restore.sh $(if $(YES),--yes,) FILE=$(FILE)
 # Учения тоже идут через run.sh: он читает .env, где лежит адрес роли учений
 DRILL_PREFIX := $(RUN)
+DEPS_CMD := $(RUN) python scripts/deps_check.py
+DEPS_PRE := true
 else
 RUN  := $(COMPOSE) --profile test run --rm tests
 MODE := в контейнерах (docker compose, .env.docker)
@@ -45,6 +50,15 @@ SEED_CMD    := $(COMPOSE) run --rm migrate python scripts/seed_demo.py
 BACKUP_CMD  := bash scripts/container_backup.sh
 RESTORE_CMD  = bash scripts/container_restore.sh $(if $(YES),--yes,) FILE=$(FILE)
 DRILL_PREFIX := $(RUN)
+# Проверке зависимостей нужен pypi.org, а служба tests работает во внутренней
+# сети без выхода наружу. Поэтому — отдельный запуск образа проверок в сети по
+# умолчанию. Дерево проекта подключается только для чтения: проверяются
+# текущие lock-файлы, а не те, что были при сборке образа
+DEPS_CMD := docker run --rm --cap-drop ALL --security-opt no-new-privileges:true \
+  -v "$(CURDIR):/src:ro" -v "$(CURDIR)/reports:/src/reports" -w /src \
+  $(TESTS_IMAGE) python scripts/deps_check.py
+DEPS_PRE := docker image inspect $(TESTS_IMAGE) >/dev/null 2>&1 || \
+  { echo "Нет образа проверок $(TESTS_IMAGE): сначала make build"; exit 1; }
 endif
 
 .PHONY: help mode setup run test test-cov test-report quality types sast secrets \
@@ -52,7 +66,7 @@ endif
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
-        shutdown-drill failover-drill restore-new-volume lock clean
+        shutdown-drill failover-drill restore-new-volume lock clean deps-check
 
 help: ## Показать список команд
 	@printf '\nСпособ запуска проверок: \033[33m%s\033[0m\n' "$(MODE)"
@@ -204,6 +218,11 @@ secrets: ## Поиск секретов и запрещённых файлов �
 
 waivers: ## Запрет исключений без обоснования и снижения порогов (пункт 14)
 	$(RUN) python scripts/waiver_check.py
+
+deps-check: ## Зависимости из lock-файлов — на известные уязвимости (нужен pypi.org)
+	@mkdir -p reports && chmod a+rwx reports
+	@$(DEPS_PRE)
+	$(DEPS_CMD)
 
 mutants: ## Мутационная проверка: подменить условия в правилах, тесты должны упасть
 	$(RUN) python scripts/mutation_check.py
