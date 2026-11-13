@@ -74,7 +74,7 @@ endif
         migrate-drill-local restore-drill-local mutants seed create-admin \
         backup restore backup-local restore-local verify verify-local verify-docker \
         docker-env build preflight up down logs ps shell container-check persist-drill \
-        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch guard ci checks-image \
+        shutdown-drill failover-drill restore-new-volume lock clean deps-check image-scan secrets-branch secrets-history guard ci checks-image \
         push publish registry-up registry-down registry-ls \
         test-unit test-int schema-check secrets-scan build-app ci-sync codeowners-check
 
@@ -280,6 +280,10 @@ secrets-scan: secrets secrets-branch ## Стадия secrets-scan (ТЗ 7.1): д
 secrets-branch: ## Секреты во ВСЕХ коммитах ветки, включая удалённые позже: [BASE=origin/main]
 	@mkdir -p reports
 	python3 scripts/secret_scan.py --since $(BASE) --report reports/secrets-branch.json
+
+secrets-history: ## Секреты во всей истории репозитория (перед открытием репозитория)
+	@mkdir -p reports
+	python3 scripts/secret_scan.py --all --report reports/secrets-history.json
 
 waivers: ## Запрет исключений без обоснования и снижения порогов (пункт 14)
 	$(RUN) python scripts/waiver_check.py

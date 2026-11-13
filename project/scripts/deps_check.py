@@ -140,8 +140,8 @@ def run_pip_audit(report: Path) -> int:
     command += ["--vulnerability-service", "pypi", "--timeout", "30"]
     # Кэш — во временном каталоге: у пользователя образа нет домашнего каталога
     command += ["--cache-dir", str(Path(tempfile.gettempdir()) / "audfond-pip-audit")]
-    for vuln_id in sorted(ALLOWED):
-        command += ["--ignore-vuln", vuln_id]
+    # Исключения не передаются pip-audit ключом --ignore-vuln: тогда они
+    # пропали бы из отчёта. Они остаются в отчёте и отделяются здесь
 
     report.parent.mkdir(parents=True, exist_ok=True)
     report.unlink(missing_ok=True)
@@ -183,7 +183,15 @@ def main() -> int:
     for finding in allowed:
         print(f"  исключение  {finding.describe()} — {reason_for(finding)}")
     for item in skipped:
-        print(f"  не проверен {item}")
+        print(f"  не проверен {item}", file=sys.stderr)
+
+    if skipped:
+        print(
+            f"Не проверено пакетов: {len(skipped)}. Пакет, по которому нет данных, может "
+            "содержать уязвимость — проверка не пройдена.",
+            file=sys.stderr,
+        )
+        return 1
 
     if not blocking:
         print(
