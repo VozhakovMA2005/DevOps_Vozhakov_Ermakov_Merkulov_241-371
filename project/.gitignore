@@ -26,6 +26,8 @@ reports/
 *.sql.gz
 dist/
 build/
+# Кэш слоёв сборки образов в конвейере CI (docker/compose.ci.yml)
+.ci-cache/
 
 # Редакторы и ОС
 .idea/
