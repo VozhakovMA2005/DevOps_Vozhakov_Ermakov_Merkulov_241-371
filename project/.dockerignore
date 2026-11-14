@@ -23,9 +23,10 @@ __pycache__
 .coverage
 htmlcov
 
-# Данные и артефакты: копии базы, отчёты, снимки задач
+# Данные и артефакты: копии базы, отчёты, снимки задач, кэш сборки CI
 backups
 reports
+.ci-cache
 *.dump
 by-task*
 git-history*
