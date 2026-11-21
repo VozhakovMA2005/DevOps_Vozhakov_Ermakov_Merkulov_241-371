@@ -65,3 +65,4 @@
 
 # CD стенда — отдельное одобрение ответственных
 /project/deploy/cd/ @GrigoryMerkulov @VozhakovMA2005
+/.github/workflows/cd-manual.yml @MikhailErm @GrigoryMerkulov
