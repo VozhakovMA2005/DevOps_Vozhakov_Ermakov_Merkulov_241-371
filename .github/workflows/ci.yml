@@ -532,3 +532,39 @@ jobs:
       - name: Выйти из реестра
         if: always()
         run: docker logout ghcr.io
+
+
+  deploy-staging:
+    name: deploy-staging
+    needs: publish
+    defaults:
+      run:
+        working-directory: .
+    if: >-
+      needs.publish.result == 'success' && github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' && vars.CD_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 20
+    concurrency:
+      group: audfond-staging-delivery
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Доставить опубликованный SHA через отдельную учетную запись
+        env:
+          CD_HOST: ${{ vars.CD_HOST }}
+          CD_USER: ${{ vars.CD_USER }}
+          CD_KEY: ${{ secrets.CD_SSH_KEY }}
+          CD_KNOWN_HOSTS: ${{ secrets.CD_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$current" != "$RELEASE_SHA" ]; then
+            echo 'Более новый main уже появился; устаревший выпуск пропущен'
+            exit 0
+          fi
+          bash project/deploy/cd/remote.sh deploy "sha-$RELEASE_SHA" "$RELEASE_SHA"
