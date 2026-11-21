@@ -62,3 +62,6 @@
 /project/scripts/image_scan.py              @GrigoryMerkulov @VozhakovMA2005
 /project/scripts/container_check.py         @GrigoryMerkulov @VozhakovMA2005
 /project/scripts/push_image.sh              @GrigoryMerkulov @VozhakovMA2005
+
+# CD стенда — отдельное одобрение ответственных
+/project/deploy/cd/ @GrigoryMerkulov @VozhakovMA2005
