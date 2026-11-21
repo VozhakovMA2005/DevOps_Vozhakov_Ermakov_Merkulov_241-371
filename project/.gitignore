@@ -33,3 +33,12 @@ build/
 .idea/
 .vscode/
 .DS_Store
+
+# Все реальные настройки CD хранятся вне репозитория
+**/deploy.env
+**/app.env
+**/db.env
+**/smoke.env
+release-state.json
+release-history.jsonl
+compose.json

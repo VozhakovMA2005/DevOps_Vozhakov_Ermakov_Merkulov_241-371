@@ -16,7 +16,7 @@ SHELL := /bin/bash
 COMPOSE := docker compose --env-file .env.docker
 VENV := .venv
 PY := $(VENV)/bin/python
-GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 export GIT_COMMIT
 # Без служебных аттестаций сборки (provenance): с ними каждая сборка даёт
 # новый идентификатор образа даже без единого изменения, и make up зря
