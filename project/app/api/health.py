@@ -9,6 +9,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from alembic.config import Config as AlembicConfig
+from alembic.script import ScriptDirectory
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -34,6 +38,16 @@ def readyz(request: Request) -> JSONResponse:
     if revision is None:
         return error_response(
             503, "MIGRATIONS_NOT_APPLIED", "Миграции не применены: выполните make migrate"
+        )
+
+    migration_config = AlembicConfig()
+    migration_config.set_main_option(
+        "script_location", str(Path(__file__).resolve().parents[2] / "migrations")
+    )
+    expected = ScriptDirectory.from_config(migration_config).get_heads()
+    if expected != [revision]:
+        return error_response(
+            503, "MIGRATIONS_MISMATCH", "Ревизия базы не совпадает с ревизией приложения"
         )
 
     return JSONResponse(
