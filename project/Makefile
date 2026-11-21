@@ -384,6 +384,13 @@ clean: ## ОПАСНО: удалить контейнеры И ТОМ С ДАН�
 	@read -r -p "Удалить контейнеры и том с данными базы? [да/нет] " a && [ "$$a" = "да" ]
 	$(COMPOSE) --profile test down -v --remove-orphans
 
-.PHONY: cd-test
+.PHONY: cd-test release-deploy release-rollback release-check
+CD_ROOT ?= /srv/audfond-staging
 cd-test: ## Тесты отказов доставки и приемки без Docker и БД
 	python3 deploy/cd/test_cd.py
+release-deploy: ## Выпустить конкретный TAG на отдельный стенд
+	python3 deploy/cd/cd.py deploy --root "$(CD_ROOT)" --tag "$(TAG)"
+release-rollback: ## Возвратить предыдущий принятый digest
+	python3 deploy/cd/cd.py rollback --root "$(CD_ROOT)"
+release-check: ## Проверить реально работающий релиз
+	python3 deploy/cd/cd.py check --root "$(CD_ROOT)"

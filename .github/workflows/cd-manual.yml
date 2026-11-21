@@ -1,0 +1,38 @@
+name: CD manual
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Действие на отдельном стенде
+        required: true
+        type: choice
+        options: [deploy, rollback, recover, check]
+      tag:
+        description: Точный тег образа X.Y.Z или sha-<40 hex>, только для deploy
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main' && vars.CD_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    environment: staging
+    timeout-minutes: 20
+    concurrency:
+      group: audfond-staging-delivery
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Деплой, проверка или возврат
+        env:
+          CD_HOST: ${{ vars.CD_HOST }}
+          CD_USER: ${{ vars.CD_USER }}
+          CD_KEY: ${{ secrets.CD_SSH_KEY }}
+          CD_KNOWN_HOSTS: ${{ secrets.CD_KNOWN_HOSTS }}
+          ACTION: ${{ inputs.action }}
+          TAG: ${{ inputs.tag }}
+        run: bash project/deploy/cd/remote.sh "$ACTION" "$TAG"
