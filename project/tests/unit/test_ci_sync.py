@@ -9,6 +9,20 @@ from __future__ import annotations
 
 from scripts import ci_sync_check as sync
 
+
+def test_delivery_is_downstream_of_publication():
+    workflow = WORKFLOW + "\n  deploy-staging:\n    needs: publish\n"
+    assert sync.check(sync.parse_workflow(workflow), sync.parse_stages(STAGES)) == []
+
+
+def test_delivery_cannot_skip_publication():
+    workflow = WORKFLOW + "\n  deploy-staging:\n    needs: ci-gate\n"
+    assert any(
+        "deploy-staging" in problem
+        for problem in sync.check(sync.parse_workflow(workflow), sync.parse_stages(STAGES))
+    )
+
+
 TZ_JOBS = "\n".join(
     f"  {name}:\n    name: {name}\n    needs: {prev}\n    steps:\n      - uses: actions/checkout@v6\n      - name: x\n        run: make {target}\n"
     for name, prev, target in [

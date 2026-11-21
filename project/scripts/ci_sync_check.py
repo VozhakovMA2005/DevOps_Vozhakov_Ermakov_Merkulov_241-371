@@ -47,7 +47,7 @@ TZ_ORDER = (
     "deps-check",
 )
 #: Служебные задачи CI без стадии в make ci
-SERVICE_JOBS = {"config", "ci-gate", "publish", "publish-local"}
+SERVICE_JOBS = {"config", "ci-gate", "publish", "publish-local", "deploy-staging"}
 #: Вспомогательные цели make: готовят окружение, а не проверяют
 HELPER_TARGETS = {"docker-env", "push"}
 #: Действия GitHub с закреплённой основной версией или полным SHA коммита,
@@ -178,6 +178,10 @@ def check(jobs: dict[str, Job], stages: dict[str, set[str]]) -> list[str]:
             problems.append(
                 f"«{name}» должна ждать ci-gate: публикация только после всех стадий"
             )
+
+    deployment = jobs.get("deploy-staging")
+    if deployment is not None and "publish" not in deployment.needs:
+        problems.append("deploy-staging должна ждать publish: доставка после публикации")
 
     for name, job in jobs.items():
         if job.continue_on_error:

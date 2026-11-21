@@ -255,19 +255,19 @@ test-report: ## Тесты с отчётами для CI: junit, coverage xml и
 
 # Отчёт линтера пишется первым запуском, итог даёт второй: так отчёт есть и
 # тогда, когда проверка падает, — именно тогда он и нужен
-quality: ## Линтер и форматирование (отчёт reports/ruff.xml)
+quality: cd-test ## Линтер и форматирование (отчёт reports/ruff.xml)
 	@mkdir -p reports && chmod a+rwx reports
 	$(RUN) sh -c "ruff check --config pyproject.toml --output-format=junit --output-file=reports/ruff.xml . ; \
 	  ruff check --config pyproject.toml . && ruff format --config pyproject.toml --check ."
 
 types: ## Проверка типов (отчёт reports/mypy.xml)
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) mypy --config-file pyproject.toml app scripts --junit-xml reports/mypy.xml
+	$(RUN) mypy --config-file pyproject.toml app scripts deploy/cd/cd.py --junit-xml reports/mypy.xml
 
 sast: ## Статический анализ на безопасность (ТЗ 7.1)
 	@mkdir -p reports && chmod a+rwx reports
-	$(RUN) sh -c "bandit -q -c pyproject.toml -r app scripts \
-	  -f json -o reports/bandit.json; bandit -q -c pyproject.toml -r app scripts"
+	$(RUN) sh -c "bandit -q -c pyproject.toml -r app scripts deploy/cd/cd.py \
+	  -f json -o reports/bandit.json; bandit -q -c pyproject.toml -r app scripts deploy/cd/cd.py"
 
 # Поиск идёт по файлам РЕПОЗИТОРИЯ (git ls-files) на машине, в любом режиме.
 # В образе проверок лежит копия дерева на момент сборки: новый файл с
@@ -383,3 +383,7 @@ verify-docker: ## Полная проверка, явно в контейнер�
 clean: ## ОПАСНО: удалить контейнеры И ТОМ С ДАННЫМИ базы
 	@read -r -p "Удалить контейнеры и том с данными базы? [да/нет] " a && [ "$$a" = "да" ]
 	$(COMPOSE) --profile test down -v --remove-orphans
+
+.PHONY: cd-test
+cd-test: ## Тесты отказов доставки и приемки без Docker и БД
+	python3 deploy/cd/test_cd.py
