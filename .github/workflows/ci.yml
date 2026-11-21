@@ -380,7 +380,7 @@ jobs:
       - name: make build-app
         run: make build-app
       - name: Образ — в файл
-        run: docker image save audfond:0.5.0 | gzip -1 > "$RUNNER_TEMP/audfond-image.tar.gz"
+        run: docker image save "$(make -s print-app-image)" | gzip -1 > "$RUNNER_TEMP/audfond-image.tar.gz"
       - uses: actions/upload-artifact@v7
         with:
           name: image

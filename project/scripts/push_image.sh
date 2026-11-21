@@ -25,7 +25,7 @@
 . "$(dirname "$0")/lib.sh"
 cd "$ROOT" || exit 1
 
-APP_IMAGE="${APP_IMAGE:-audfond:0.5.0}"
+APP_IMAGE="${APP_IMAGE:-audfond:0.6.0}"
 IMAGE_NAME="${IMAGE_NAME:-audfond}"
 REGISTRY="${REGISTRY:-}"
 MARKER="reports/ci-passed"
