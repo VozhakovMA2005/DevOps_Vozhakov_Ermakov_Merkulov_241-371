@@ -1,0 +1,13 @@
+---
+ansible_user: labadmin
+ansible_python_interpreter: /usr/bin/python3
+
+audfond_cd_user: audfond-cd
+audfond_cd_home: /var/lib/audfond-cd
+audfond_controller_dir: /opt/audfond-cd
+audfond_state_dir: /srv/audfond-staging
+audfond_db_user: audfond
+audfond_image_repo: ghcr.io/vozhakovma2005/audfond
+audfond_image_tag: sha-161f38ed017cb4790227bf636d13ecb692a832fe
+audfond_log_level: INFO
+audfond_ssh_from: any

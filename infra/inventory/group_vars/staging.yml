@@ -1,0 +1,4 @@
+---
+audfond_environment: staging
+audfond_http_port: 18080
+audfond_db_name: audfond_staging
