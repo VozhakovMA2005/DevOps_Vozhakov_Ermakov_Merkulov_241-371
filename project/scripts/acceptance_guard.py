@@ -82,9 +82,10 @@ CRITICAL = (
     "migrations/env.py",
     "CONTRIBUTING.md",
 )
-#: Критические файлы в корне репозитория: настройки CI и правила согласования
+#: Критические файлы в корне репозитория: CI, правила согласования и IaC
 CRITICAL_REPO = (
     ".github/*",
+    "infra/*",
     ".gitlab-ci.yml",
     ".gitlab/*",
     "Jenkinsfile",
