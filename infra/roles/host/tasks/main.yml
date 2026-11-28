@@ -1,0 +1,83 @@
+---
+- name: Install the baseline operating system packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - openssh-server
+      - python3
+      - ufw
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Create the AudFond system group
+  ansible.builtin.group:
+    name: "{{ audfond_cd_user }}"
+    system: true
+    state: present
+
+- name: Create the non-login AudFond service account
+  ansible.builtin.user:
+    name: "{{ audfond_cd_user }}"
+    group: "{{ audfond_cd_user }}"
+    home: "{{ audfond_cd_home }}"
+    create_home: false
+    shell: /usr/sbin/nologin
+    password_lock: true
+    system: true
+    state: present
+
+- name: Protect the service account home
+  ansible.builtin.file:
+    path: "{{ audfond_cd_home }}"
+    state: directory
+    owner: "{{ audfond_cd_user }}"
+    group: "{{ audfond_cd_user }}"
+    mode: "0700"
+
+- name: Start and enable OpenSSH
+  ansible.builtin.service:
+    name: ssh
+    enabled: true
+    state: started
+
+- name: Apply the SSH authentication policy
+  ansible.builtin.template:
+    src: sshd-audfond.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-audfond-lr7.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload AudFond SSH
+
+- name: Allow only the selected SSH management source
+  community.general.ufw:
+    rule: allow
+    direction: in
+    proto: tcp
+    port: "22"
+    from_ip: "{{ audfond_ssh_from }}"
+
+- name: Set the firewall incoming policy
+  community.general.ufw:
+    default: deny
+    direction: incoming
+
+- name: Set the firewall outgoing policy
+  community.general.ufw:
+    default: allow
+    direction: outgoing
+
+- name: Read the firewall state
+  ansible.builtin.command:
+    argv: [/usr/sbin/ufw, status]
+  environment:
+    LC_ALL: C
+  register: audfond_firewall_status
+  changed_when: false
+
+- name: Enable the firewall
+  community.general.ufw:
+    state: enabled
+  when: "'Status: active' not in audfond_firewall_status.stdout_lines"
