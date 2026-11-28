@@ -47,6 +47,10 @@
           {
             "context": "guard-main",
             "integration_id": 15368
+          },
+          {
+            "context": "infra-check",
+            "integration_id": 15368
           }
         ]
       }

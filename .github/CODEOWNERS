@@ -66,3 +66,7 @@
 # CD стенда — отдельное одобрение ответственных
 /project/deploy/cd/ @GrigoryMerkulov @VozhakovMA2005
 /.github/workflows/cd-manual.yml @MikhailErm @GrigoryMerkulov
+
+# ЛР7: роли, шаблоны, inventory, настройки Vault и проверка инфраструктуры
+/infra/                                    @GrigoryMerkulov @VozhakovMA2005 @MikhailErm
+/.github/workflows/infra.yml                @MikhailErm @GrigoryMerkulov @VozhakovMA2005
