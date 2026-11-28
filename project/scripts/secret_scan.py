@@ -147,6 +147,10 @@ SAFE_VALUE_MARKERS = (
     ":'",  # подстановка переменной psql: PASSWORD :'owner_password'
 )
 
+#: Единственная ссылка на переменную Ansible, без строковых литералов или
+#: значений по умолчанию внутри шаблона.
+JINJA_VARIABLE = re.compile(r"\s*{{\s*[A-Za-z_]\w*\s*}}\s*")
+
 #: Подозрительные присваивания. Ищем именно «ключ = значение в кавычках»:
 #: ровно так секрет и попадает в репозиторий
 #: Имя может нести приставку: DB_PASSWORD, SMTP_PASSWORD, github_token. Граница
@@ -383,7 +387,12 @@ def check_line(
         return
     name, value = match.group(1), match.group(2)
     # "$OWNER_PASSWORD" в сценарии оболочки — подстановка переменной, не значение
-    if looks_substituted(line) or is_placeholder(value) or value.startswith("$"):
+    if (
+        looks_substituted(line)
+        or is_placeholder(value)
+        or value.startswith("$")
+        or JINJA_VARIABLE.fullmatch(value)
+    ):
         return
     if is_example:
         findings.append(
