@@ -1,0 +1,12 @@
+---
+- name: Validate the combined SSH configuration
+  ansible.builtin.command:
+    argv: [/usr/sbin/sshd, "-t"]
+  changed_when: false
+  listen: Reload AudFond SSH
+
+- name: Reload the SSH service
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded
+  listen: Reload AudFond SSH
