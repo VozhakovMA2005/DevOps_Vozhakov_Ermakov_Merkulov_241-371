@@ -1,0 +1,39 @@
+---
+- name: Install Docker Engine and the Compose v2 plugin
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Start and enable Docker Engine
+  ansible.builtin.service:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Read the local Docker Engine version
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, version, "--format", json]
+  register: audfond_docker_version
+  changed_when: false
+
+- name: Require the Docker release that isolates loopback ports
+  ansible.builtin.assert:
+    that:
+      - (audfond_docker_version.stdout | from_json).Server.Version is version("28.0.0", ">=")
+    fail_msg: "Install Docker Engine 28 or newer from the Ubuntu updates/security repositories."
+    quiet: true
+
+- name: Allow the dedicated deployment account to use Docker locally
+  ansible.builtin.user:
+    name: "{{ audfond_cd_user }}"
+    groups: [docker]
+    append: true
+
+- name: Check that Docker Compose v2 is available
+  ansible.builtin.command:
+    argv: [/usr/bin/docker, compose, version]
+  changed_when: false

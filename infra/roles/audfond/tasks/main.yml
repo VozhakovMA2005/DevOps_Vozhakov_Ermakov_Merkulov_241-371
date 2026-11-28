@@ -1,0 +1,67 @@
+---
+- name: Create the releases controller directory
+  ansible.builtin.file:
+    path: "{{ audfond_controller_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the AudFond release controller from this checkout
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../project/deploy/cd/cd.py"
+    dest: "{{ audfond_controller_dir }}/cd.py"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the adapter for release and configuration changes
+  ansible.builtin.copy:
+    src: apply_release.py
+    dest: "{{ audfond_controller_dir }}/apply_release.py"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create the protected release state directory
+  ansible.builtin.file:
+    path: "{{ audfond_state_dir }}"
+    state: directory
+    owner: "{{ audfond_cd_user }}"
+    group: "{{ audfond_cd_user }}"
+    mode: "0700"
+
+- name: Register which environment controls this state directory
+  ansible.builtin.copy:
+    content: "{{ audfond_environment }}\n"
+    dest: "{{ audfond_state_dir }}/.lr7-environment"
+    owner: "{{ audfond_cd_user }}"
+    group: "{{ audfond_cd_user }}"
+    mode: "0600"
+
+- name: Install protected configuration files from templates
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ audfond_state_dir }}/{{ item }}"
+    owner: "{{ audfond_cd_user }}"
+    group: "{{ audfond_cd_user }}"
+    mode: "0600"
+  loop: [deploy.env, app.env, db.env, smoke.env]
+  no_log: true
+  diff: false
+
+- name: Converge the released image and managed configuration
+  ansible.builtin.command:
+    chdir: "{{ audfond_state_dir }}"
+    argv:
+      - /usr/sbin/runuser
+      - "-u"
+      - "{{ audfond_cd_user }}"
+      - "--"
+      - /usr/bin/python3
+      - "-B"
+      - "{{ audfond_controller_dir }}/apply_release.py"
+      - "{{ audfond_state_dir }}"
+      - "{{ audfond_image_tag }}"
+  register: audfond_convergence
+  changed_when: "'Управляемое состояние приложения обновлено' in audfond_convergence.stdout_lines"
