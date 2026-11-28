@@ -1,0 +1,102 @@
+---
+- name: Configure AudFond infrastructure
+  hosts: "lab:staging"
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  serial: 1
+
+  pre_tasks:
+    - name: Confirm the dedicated infrastructure target
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - ansible_facts.architecture == "x86_64"
+          - ansible_facts.distribution == "Ubuntu"
+          - ansible_facts.distribution_version in ["24.04", "26.04"]
+          - ansible_facts.hostname == audfond_target_hostname
+          - audfond_environment in ["lab", "staging"]
+        fail_msg: >-
+          Limit the play to one dedicated amd64 Ubuntu Server 24.04 or 26.04 VM with the hostname
+          declared for this node. The LR6 staging VM is not a target.
+        quiet: true
+      tags: always
+
+    - name: Inspect the staging directory before touching the target
+      ansible.builtin.stat:
+        path: "{{ audfond_state_dir }}"
+      register: audfond_existing_root
+      tags: always
+
+    - name: Read the infrastructure ownership marker
+      ansible.builtin.slurp:
+        src: "{{ audfond_state_dir }}/.lr7-environment"
+      register: audfond_existing_marker
+      when: audfond_existing_root.stat.exists
+      failed_when: false
+      tags: always
+
+    - name: Detect an empty staging directory from an interrupted first apply
+      ansible.builtin.find:
+        paths: ["{{ audfond_state_dir }}"]
+        file_type: any
+        hidden: true
+        recurse: false
+        limit: 1
+      register: audfond_existing_contents
+      when:
+        - audfond_existing_root.stat.isdir | default(false)
+        - audfond_existing_marker.content is not defined
+      tags: always
+
+    - name: Confirm existing data belongs to the selected environment
+      ansible.builtin.assert:
+        that:
+          - >-
+            not audfond_existing_root.stat.exists or
+            (audfond_existing_marker.content | default('') | b64decode | trim) == audfond_environment or
+            ((audfond_existing_contents.matched | default(-1)) == 0 and
+             (audfond_existing_root.stat.pw_name | default('')) == audfond_cd_user and
+             audfond_existing_root.stat.mode == '0700')
+        fail_msg: >-
+          A staging directory exists without the expected LR7 marker.
+          Use a clean, dedicated VM or the existing LR7 node for this environment.
+        quiet: true
+      tags: always
+
+    - name: Validate release parameters
+      ansible.builtin.assert:
+        that:
+          - audfond_image_tag | default("") is match("^sha-[0-9a-f]{40}$")
+          - audfond_image_repo is match("^[a-z0-9][a-z0-9.:/_-]+/audfond$")
+          - audfond_http_port | int >= 1024
+          - audfond_http_port | int <= 65535
+          - audfond_db_name is match("^[a-z][a-z0-9_]+$")
+          - audfond_db_user is match("^[a-z][a-z0-9_]+$")
+        fail_msg: "Provide a published image tag sha-<40 hex digits> and valid inventory values."
+        quiet: true
+      tags: [apply, audfond]
+
+    - name: Check secrets supplied from the operator's Ansible Vault
+      ansible.builtin.assert:
+        that:
+          - vault_environment | default(audfond_environment) == audfond_environment
+          - vault_db_password | default("") is match("^[A-Za-z0-9_-]{32,}$")
+          - vault_jwt_secret | default("") is match("^[A-Za-z0-9_-]{32,}$")
+          - vault_smoke_password | default("") is match("^[A-Za-z0-9_-]{32,}$")
+          - vault_db_password != vault_jwt_secret
+          - vault_db_password != vault_smoke_password
+          - vault_jwt_secret != vault_smoke_password
+        quiet: true
+      no_log: true
+      tags: [apply, audfond]
+
+  roles:
+    - role: host
+      tags: [apply, host]
+    - role: docker
+      tags: [apply, docker]
+    - role: audfond
+      tags: [apply, audfond]
+    - role: verify
+      tags: [apply, verify]
