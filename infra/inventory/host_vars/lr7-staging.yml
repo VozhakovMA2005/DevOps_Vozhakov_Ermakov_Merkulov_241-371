@@ -1,0 +1,3 @@
+---
+ansible_host: lr7-staging
+audfond_target_hostname: lr7-staging

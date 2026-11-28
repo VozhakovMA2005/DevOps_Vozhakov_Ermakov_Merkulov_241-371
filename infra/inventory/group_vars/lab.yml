@@ -1,0 +1,4 @@
+---
+audfond_environment: lab
+audfond_http_port: 18081
+audfond_db_name: audfond_lab
