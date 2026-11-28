@@ -1,0 +1,42 @@
+---
+- name: Read version from the loopback endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ audfond_http_port }}/version"
+    method: GET
+    status_code: 200
+    use_proxy: false
+    timeout: 5
+  register: audfond_version
+  until: audfond_version.status | default(0) == 200
+  retries: 12
+  delay: 5
+
+- name: Check the SHA reported by the running service
+  ansible.builtin.assert:
+    that:
+      - audfond_version.json.commit is match("^[0-9a-f]{40}$")
+      - audfond_version.json.version is match("^[0-9]+[.][0-9]+[.][0-9]+$")
+      - >-
+        audfond_image_tag is not defined or
+        audfond_version.json.commit == audfond_image_tag[4:]
+    quiet: true
+
+- name: Verify container health and the application user journey
+  ansible.builtin.command:
+    chdir: "{{ audfond_state_dir }}"
+    argv:
+      - /usr/sbin/runuser
+      - "-u"
+      - "{{ audfond_cd_user }}"
+      - "--"
+      - /usr/bin/python3
+      - "-B"
+      - "{{ audfond_controller_dir }}/cd.py"
+      - check
+      - "--root"
+      - "{{ audfond_state_dir }}"
+  register: audfond_journey
+  until: audfond_journey.rc == 0
+  retries: 4
+  delay: 3
+  changed_when: false
