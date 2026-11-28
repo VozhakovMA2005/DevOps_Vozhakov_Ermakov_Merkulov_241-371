@@ -1,0 +1,31 @@
+name: infra
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  infra-check:
+    name: infra-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Версии Ansible и коллекций из репозитория
+        run: |
+          python3 -m venv "$RUNNER_TEMP/infra-venv"
+          "$RUNNER_TEMP/infra-venv/bin/python" -m pip install -r infra/requirements.txt
+          "$RUNNER_TEMP/infra-venv/bin/ansible-galaxy" collection install -r infra/requirements.yml
+          echo "$RUNNER_TEMP/infra-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Инвентарь, синтаксис и открытые секреты
+        run: make -C infra check
